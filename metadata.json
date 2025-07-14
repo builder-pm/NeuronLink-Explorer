@@ -1,0 +1,6 @@
+{
+  "name": "NeuronLink Data Analysis",
+  "description": "An interactive web application for data analysis. Users can connect to data sources, select fields, and use a pivot-table-like interface to filter and aggregate data.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
