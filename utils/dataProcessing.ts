@@ -139,8 +139,13 @@ export const generateQuery = async (
             LIMIT 25
         `;
 
+        console.log('[generateQuery] distinctQuery:', distinctQuery);
+
         const distinctValuesResult = await executeDbQuery(distinctQuery);
+        console.log('[generateQuery] distinctValuesResult:', distinctValuesResult);
+
         const distinctPivotValues = distinctValuesResult.map(row => row[pivotColumn]);
+        console.log('[generateQuery] distinctPivotValues:', distinctPivotValues);
 
         const pivotSelects = distinctPivotValues.flatMap(pivotValue => {
             return values.map(agg => {

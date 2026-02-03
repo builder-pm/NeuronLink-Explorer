@@ -17,6 +17,9 @@ import { ActionType, AppAction } from './state/actions';
 import { generateQuery, generatePreviewQuery } from './utils/dataProcessing';
 import * as db from './services/database';
 import * as backend from './services/backend';
+import { appSupabase } from './services/appSupabase';
+import { initLogging, logEvent } from './services/logger';
+import AuthModal from './components/AuthModal'; // Import Auth Modal
 
 // By defining panel components outside of App and memoizing them, we prevent
 // them from re-rendering on every state change in the parent App component.
@@ -34,11 +37,12 @@ interface SecondaryPanelProps {
   sqlQuery: string;
   executeQuery: (query: string) => Promise<DataRow[]>;
   onPreviewTable: (tableName: string) => void;
+  onBatchUpdate: (config: PivotConfig, filters: Filter[]) => void;
 }
 
 const SecondaryPanelComponent: React.FC<SecondaryPanelProps> = ({
   currentView, pivotConfig, filters, dispatch, fieldGroups, allAvailableFields, state,
-  sqlQuery, executeQuery, onPreviewTable
+  sqlQuery, executeQuery, onPreviewTable, onBatchUpdate
 }) => {
   if (currentView === 'analysis') {
     return (
@@ -55,6 +59,7 @@ const SecondaryPanelComponent: React.FC<SecondaryPanelProps> = ({
         onRemoveFilter={(id) => dispatch({ type: ActionType.REMOVE_FILTER, payload: id })}
         onPivotValueRename={(index, newName) => dispatch({ type: ActionType.RENAME_PIVOT_VALUE, payload: { index, newName } })}
         fieldAliases={state.fieldAliases}
+        onBatchUpdate={onBatchUpdate}
       />
     );
   }
@@ -89,12 +94,13 @@ interface PrimaryPanelProps {
   isDemoMode: boolean;
   onRefreshData: () => void;
   fieldAliases: FieldAliases;
+  isGuest?: boolean;
 }
 
 const PrimaryPanelComponent: React.FC<PrimaryPanelProps> = ({
   currentView, activePanel, selectedFields, onFieldChange, onAIAction, fieldGroups,
   executeQuery, availableFields, dispatch,
-  onConfigureCredentialsClick, isConnecting, isConnected, dbType, isDemoMode, onRefreshData, fieldAliases
+  onConfigureCredentialsClick, isConnecting, isConnected, dbType, isDemoMode, onRefreshData, fieldAliases, isGuest
 }) => {
   if (currentView === 'analysis') {
     return (
@@ -107,6 +113,7 @@ const PrimaryPanelComponent: React.FC<PrimaryPanelProps> = ({
         executeQuery={executeQuery}
         availableFields={availableFields} // This receives state.selectedFields from parent
         fieldAliases={fieldAliases}
+        isGuest={isGuest}
       />
     );
   }
@@ -143,7 +150,7 @@ interface MainAreaProps {
   rowsPerPage: number;
   totalRows: number;
   onRowsPerPageChange: (value: number) => void;
-  onExport: () => void;
+  onExport: (type?: 'preview' | 'full') => void;
   isDemoMode: boolean;
   joins: Join[];
   tablePositions: { [key: string]: { top: number; left: number; } };
@@ -217,6 +224,46 @@ const App: React.FC = () => {
   const [isCredsModalOpen, setIsCredsModalOpen] = useState(false);
   const [previewData, setPreviewData] = useState<{ name: string, data: DataRow[] } | null>(null);
   const [rightPanelWidth, setRightPanelWidth] = useState(380);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  const [isGuest, setIsGuest] = useState(false);
+
+  // Authentication & Session Init
+  useEffect(() => {
+    const initAuth = async () => {
+      const { data: { session } } = await appSupabase.auth.getSession();
+      const storedGuestMode = localStorage.getItem('neuronlink_guest_mode') === 'true';
+
+      if (session?.user) {
+        setUser(session.user);
+        setIsGuest(false);
+        localStorage.removeItem('neuronlink_guest_mode');
+        initLogging();
+      } else if (storedGuestMode) {
+        setIsGuest(true);
+      }
+
+      setIsAuthChecking(false);
+    };
+    initAuth();
+
+    const { data: { subscription } } = appSupabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        setIsGuest(false);
+        localStorage.removeItem('neuronlink_guest_mode');
+        if (_event === 'SIGNED_IN') {
+          logEvent('AUTH', 'LOGIN', { provider: session.user.app_metadata.provider });
+        }
+      }
+      if (_event === 'SIGNED_OUT') {
+        logEvent('AUTH', 'LOGOUT');
+        setIsGuest(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
     mouseDownEvent.preventDefault();
@@ -252,6 +299,7 @@ const App: React.FC = () => {
     if (success) {
       dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTION_STATUS, payload: true });
       toast.success('Connection successful! Fetching tables...', { id: 'lakehouse-connect' });
+      logEvent('DATA', 'DB_CONNECT', { type: 'athena', region: credentials.awsRegion });
 
       try {
         const tables = await backend.fetchLakehouseTables(credentials);
@@ -281,6 +329,7 @@ const App: React.FC = () => {
     if (success) {
       dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTION_STATUS, payload: true });
       toast.success('Connection successful! Fetching tables...', { id: 'supabase-connect' });
+      logEvent('DATA', 'DB_CONNECT', { type: 'supabase' });
 
       try {
         const tables = await backend.fetchSupabaseTables(credentials);
@@ -357,7 +406,7 @@ const App: React.FC = () => {
     const runQuery = async () => {
       dispatch({ type: ActionType.SET_LOADING, payload: true });
       try {
-        const fullQuery = await generateQuery(
+        const fullQueryRaw = await generateQuery(
           { modelConfig: confirmedModelConfiguration, joins },
           pivotConfig,
           filters,
@@ -365,9 +414,29 @@ const App: React.FC = () => {
           state.fieldAliases,
           analysisActiveFields
         );
-        if (fullQuery) {
-          const results = await dbService.executeQuery(fullQuery);
+
+        const fullQuery: string | null = fullQueryRaw;
+
+        let queryToRun: string | null = fullQuery;
+        if (isGuest && fullQuery) {
+          // Force 10 row limit for guests
+          queryToRun = fullQuery.replace(/LIMIT\s+\d+/i, 'LIMIT 10');
+          if (!queryToRun.match(/LIMIT 10/i)) {
+            queryToRun = `${fullQuery} LIMIT 10`;
+          }
+        }
+
+        if (queryToRun && typeof queryToRun === 'string' && queryToRun.length > 0) {
+          const startTime = performance.now();
+          const results = await dbService.executeQuery(queryToRun);
           dispatch({ type: ActionType.SET_PROCESSED_DATA, payload: results });
+
+          logEvent('DATA', 'QUERY_EXECUTE', {
+            query_snippet: fullQuery.substring(0, 50),
+            duration_ms: Math.round(performance.now() - startTime),
+            row_count: results.length,
+            success: true
+          });
         } else {
           dispatch({ type: ActionType.SET_PROCESSED_DATA, payload: [] });
         }
@@ -412,22 +481,55 @@ const App: React.FC = () => {
     runQuery();
   }, [dbService, dispatch, filters, joins, confirmedModelConfiguration, pivotConfig, discoveredTables]);
 
-  const handleExport = useCallback(() => {
-    if (processedData.length === 0) {
-      toast.error("No data to export.");
+  const handleExport = useCallback(async (type?: 'preview' | 'full') => {
+    if (isGuest) {
+      toast.error('Exporting is disabled in Guest Mode. Please sign in to download data.');
       return;
     }
     try {
-      const worksheet = XLSX.utils.json_to_sheet(processedData);
+      let exportData = processedData;
+
+      if (type === 'full') {
+        if (!dbService || !sqlQuery) {
+          toast.error("Cannot export full data: Database or query not ready.");
+          return;
+        }
+        const toastId = toast.loading("Fetching full dataset (this may take a moment)...");
+
+        // Remove any LIMIT clause to get full results
+        // Regex handles "LIMIT 100" or "LIMIT 100 OFFSET 0" case insensitive
+        const fullQuery = sqlQuery.replace(/LIMIT\s+\d+(\s+OFFSET\s+\d+)?/i, '');
+
+        try {
+          const results = await dbService.executeQuery(fullQuery);
+          exportData = results;
+          toast.dismiss(toastId);
+        } catch (err: any) {
+          toast.dismiss(toastId);
+          toast.error(`Failed to fetch full data: ${err.message}`);
+          return;
+        }
+      }
+
+      if (exportData.length === 0) {
+        toast.error("No data to export.");
+        return;
+      }
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
-      XLSX.writeFile(workbook, `${fileName || 'data'}.xlsx`);
-      toast.success("Export successful!");
+      const filename = `${fileName || 'data'}.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      toast.success(`Export successful! (${exportData.length} rows)`);
+
+      logEvent('DATA', 'EXPORT', { format: 'xlsx', rows: exportData.length, filename });
+
     } catch (error) {
       console.error("Export failed:", error);
       toast.error("An error occurred during export.");
     }
-  }, [processedData, fileName]);
+  }, [processedData, fileName, dbService, sqlQuery]);
 
   const tableHeaders = useMemo(() => {
     if (processedData.length > 0) {
@@ -462,6 +564,7 @@ const App: React.FC = () => {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     toast.success('Configuration saved successfully!');
+    logEvent('CONFIG', 'CONFIG_SAVE', { name: configName, fileName });
   }, [pivotConfig, filters, selectedFields, joins, tablePositions, fieldGroups, configName, fileName, sqlQuery, modelConfiguration, confirmedModelConfiguration, databaseType, athenaCredentials, supabaseCredentials, isDemoMode]);
 
   const handleLoadConfig = useCallback(() => {
@@ -494,12 +597,17 @@ const App: React.FC = () => {
   }, [dispatch, connectToLakehouse, connectToSupabase]);
 
   const handleAIAction = useCallback(async (action: AIAction) => {
+    if (isGuest) {
+      toast.error('AI features require an account. Sign in to unlock!');
+      return;
+    }
     if (action.action === 'pivot') {
       const pivotUpdate = action.config as Partial<PivotConfig>;
       dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, ...pivotUpdate } });
     } else if (action.action === 'filter') {
       const newFilter = action.config as Filter;
       dispatch({ type: ActionType.ADD_FILTER, payload: { ...newFilter, id: Date.now().toString() } });
+      logEvent('ANALYSIS', 'FILTER_ADD', { field: newFilter.field, operator: newFilter.operator });
     }
   }, [dispatch, pivotConfig]);
 
@@ -515,7 +623,32 @@ const App: React.FC = () => {
       ? [...new Set([...analysisActiveFields, field])]
       : analysisActiveFields.filter(f => f !== field);
     dispatch({ type: ActionType.SET_ANALYSIS_ACTIVE_FIELDS, payload: newFields });
-  }, [dispatch, analysisActiveFields]);
+
+    // Sync to Pivot Rows (Requirement: "added in the rows part... indicating table being created")
+    if (isSelected) {
+      if (!pivotConfig.rows.includes(field)) {
+        const newPivotConfig = { ...pivotConfig, rows: [...pivotConfig.rows, field] };
+        dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: newPivotConfig });
+      }
+    } else {
+      // Optional: Remove from rows if deselected to keep in sync
+      if (pivotConfig.rows.includes(field)) {
+        const newPivotConfig = { ...pivotConfig, rows: pivotConfig.rows.filter(f => f !== field) };
+        dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: newPivotConfig });
+      }
+    }
+  }, [dispatch, analysisActiveFields, pivotConfig]);
+
+  const handlePivotBatchUpdate = useCallback((newConfig: PivotConfig, newFilters: Filter[]) => {
+    dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: newConfig });
+    dispatch({ type: ActionType.SET_FILTERS, payload: newFilters });
+    logEvent('ANALYSIS', 'PIVOT_UPDATE', {
+      rows: newConfig.rows,
+      cols: newConfig.columns,
+      values: newConfig.values.length,
+      filters: newFilters.length
+    });
+  }, [dispatch]);
 
   const handlePreviewTable = useCallback(async (tableName: string) => {
     if (!dbService) return;
@@ -660,6 +793,9 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen w-screen bg-background text-foreground flex flex-col font-sans">
+      {!isAuthChecking && !user && !isGuest && (
+        <AuthModal onAuthSuccess={(guest) => guest ? setIsGuest(true) : setUser(appSupabase.auth.getUser().then(({ data }) => data.user))} />
+      )}
       <Toaster
         position="top-center"
         reverseOrder={false}
@@ -695,9 +831,14 @@ const App: React.FC = () => {
         onLoadConfig={handleLoadConfig}
         configName={configName}
         onConfigNameChange={(name) => dispatch({ type: ActionType.SET_CONFIG_NAME, payload: name })}
+        isGuest={isGuest}
+        onSignIn={() => {
+          setIsGuest(false);
+          localStorage.removeItem('neuronlink_guest_mode');
+        }}
       />
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex flex-col relative">
+        <div className="flex-1 flex flex-col relative min-w-0">
           <MemoizedMainArea
             currentView={currentView}
             paginatedData={paginatedData}
@@ -724,7 +865,7 @@ const App: React.FC = () => {
           />
         </div>
         <div className="flex flex-shrink-0 shadow-brutal-left z-10 border-l-4 border-border relative">
-          <div className={`transition-[width] duration-300 ease-in-out ${isSecondaryPanelOpen ? 'w-80' : 'w-0'} overflow-hidden flex-shrink-0`}>
+          <div className={`transition-[width] duration-300 ease-in-out ${isSecondaryPanelOpen ? 'w-80' : 'w-0'} overflow-hidden flex-shrink-0 h-full`}>
             <MemoizedSecondaryPanel
               currentView={currentView}
               pivotConfig={pivotConfig}
@@ -736,6 +877,7 @@ const App: React.FC = () => {
               sqlQuery={sqlQuery}
               executeQuery={executeQuery}
               onPreviewTable={handlePreviewTable}
+              onBatchUpdate={handlePivotBatchUpdate}
             />
           </div>
 
@@ -763,6 +905,7 @@ const App: React.FC = () => {
               isDemoMode={isDemoMode}
               onRefreshData={handleRefreshData}
               fieldAliases={state.fieldAliases}
+              isGuest={isGuest}
             />
           </div>
         </div>

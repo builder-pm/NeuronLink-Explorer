@@ -159,6 +159,7 @@ const PivotConfigPanel: React.FC<PivotConfigPanelProps & { onBatchUpdate: (confi
     }, [config, filters]);
 
     const handlePivotChange = (field: string, targetZone: 'rows' | 'columns' | 'values') => {
+        console.log('handlePivotChange', { field, targetZone, prevConfig: draftConfig });
         const newConfig = { ...draftConfig };
         const numericFields = ['total_jobs', 'total_positions', 'source_id'];
 
@@ -170,8 +171,9 @@ const PivotConfigPanel: React.FC<PivotConfigPanelProps & { onBatchUpdate: (confi
             newConfig.rows = newConfig.rows.filter(f => f !== field);
             newConfig.columns = newConfig.columns.filter(f => f !== field);
             newConfig.values = newConfig.values.filter(v => v.field !== field);
-            newConfig[targetZone] = [...newConfig[targetZone], field];
+            newConfig[targetZone] = [...(newConfig[targetZone] || []), field];
         }
+        console.log('handlePivotChange Result:', newConfig);
         setDraftConfig(newConfig);
         setIsDirty(true);
     };
@@ -221,9 +223,15 @@ const PivotConfigPanel: React.FC<PivotConfigPanelProps & { onBatchUpdate: (confi
         setIsDirty(false);
     };
 
+    const handleClear = () => {
+        setDraftConfig({ rows: [], columns: [], values: [] });
+        setDraftFilters([]);
+        setIsDirty(true);
+    };
+
     return (
-        <aside className="w-72 bg-card border-l-2 border-border flex flex-col shadow-brutal-left flex-shrink-0 relative">
-            <div className="flex-1 overflow-y-auto pb-16">
+        <aside className="w-72 h-full bg-card border-l-2 border-border flex flex-col shadow-brutal-left flex-shrink-0 relative">
+            <div className="flex-1 overflow-y-auto pb-20">
                 <div className="p-4 border-b-2 border-border bg-card">
                     <div className="flex items-center justify-between text-sm font-semibold uppercase tracking-wide font-mono">
                         <span>Create Pivot / Filter</span>
@@ -284,13 +292,20 @@ const PivotConfigPanel: React.FC<PivotConfigPanelProps & { onBatchUpdate: (confi
                     </DropZone>
                 </div>
             </div>
-            <div className="absolute bottom-0 left-0 right-0 p-4 bg-card border-t-2 border-border shadow-brutal-up">
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-card border-t-2 border-border shadow-brutal-up flex space-x-2">
+                <button
+                    onClick={handleClear}
+                    disabled={draftConfig.rows.length === 0 && draftConfig.columns.length === 0 && draftConfig.values.length === 0 && draftFilters.length === 0}
+                    className="brutal-button-secondary flex-1 text-sm py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    Clear All
+                </button>
                 <button
                     onClick={handleApply}
                     disabled={!isDirty}
-                    className="brutal-button-primary w-full text-sm py-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="brutal-button-primary flex-1 text-sm py-3 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    {isDirty ? 'Apply Changes' : 'No Changes'}
+                    {isDirty ? 'Apply' : 'No Changes'}
                 </button>
             </div>
         </aside>

@@ -39,12 +39,12 @@ const DataTable: React.FC<DataTableProps> = ({ data, tableHeaders, isLoading, cu
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex-1 overflow-auto">
-        <table className="w-full text-sm text-left border-collapse" aria-label="Data results">
+      <div className="flex-1 overflow-auto w-full shadow-inner bg-muted/10 relative">
+        <table className="min-w-full text-sm text-left border-collapse" aria-label="Data results">
           <thead className="bg-muted sticky top-0 z-10">
             <tr className="border-b-2 border-border">
               {headers.map(header => (
-                <th key={header} scope="col" className="px-4 py-2 font-semibold text-foreground whitespace-nowrap uppercase tracking-wide text-xs font-mono">
+                <th key={header} scope="col" className="px-4 py-2 font-semibold text-foreground whitespace-nowrap uppercase tracking-wide text-xs font-mono min-w-[100px]">
                   <span>{header.replace(/_/g, ' ')}</span>
                 </th>
               ))}
@@ -52,11 +52,11 @@ const DataTable: React.FC<DataTableProps> = ({ data, tableHeaders, isLoading, cu
           </thead>
           <tbody className="divide-y divide-border bg-card">
             {data.length === 0 && totalRows > 0 && (
-                <tr>
-                    <td colSpan={headers.length || 1} className="text-center p-6 text-muted-foreground">
-                        No results on this page.
-                    </td>
-                </tr>
+              <tr>
+                <td colSpan={headers.length || 1} className="text-center p-6 text-muted-foreground">
+                  No results on this page.
+                </td>
+              </tr>
             )}
             {data.map((row, rowIndex) => (
               <tr key={rowIndex} className="hover:bg-muted/50 transition-colors">
@@ -72,40 +72,40 @@ const DataTable: React.FC<DataTableProps> = ({ data, tableHeaders, isLoading, cu
       </div>
       <div className="flex-shrink-0 p-2 text-xs text-muted-foreground border-t-2 border-border flex justify-between items-center bg-muted">
         <div className="flex items-center space-x-2">
-            <label htmlFor="rows-per-page-select" className="font-medium uppercase tracking-wide">Rows per page:</label>
-            <select
-                id="rows-per-page-select"
-                value={rowsPerPage}
-                onChange={(e) => onRowsPerPageChange(Number(e.target.value))}
-                className="brutal-select text-xs py-1"
-            >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-            </select>
-            <span className="pl-4 font-mono">
-              {startRow} - {endRow} of {totalRows}
-            </span>
+          <label htmlFor="rows-per-page-select" className="font-medium uppercase tracking-wide">Rows per page:</label>
+          <select
+            id="rows-per-page-select"
+            value={rowsPerPage}
+            onChange={(e) => onRowsPerPageChange(Number(e.target.value))}
+            className="brutal-select text-xs py-1"
+          >
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
+          <span className="pl-4 font-mono">
+            {startRow} - {endRow} of {totalRows}
+          </span>
         </div>
         <div className="flex items-center space-x-2">
-            <button
-                onClick={() => onPageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                aria-label="Go to previous page"
-                className="brutal-button-secondary text-xs py-1 px-3 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-                Previous
-            </button>
-            <span aria-current="page" className="font-mono text-foreground">Page {currentPage} of {pageCount}</span>
-             <button
-                onClick={() => onPageChange(currentPage + 1)}
-                disabled={currentPage === pageCount || totalRows === 0}
-                aria-label="Go to next page"
-                className="brutal-button-secondary text-xs py-1 px-3 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-                Next
-            </button>
+          <button
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            aria-label="Go to previous page"
+            className="brutal-button-secondary text-xs py-1 px-3 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span aria-current="page" className="font-mono text-foreground">Page {currentPage} of {pageCount}</span>
+          <button
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage === pageCount || totalRows === 0}
+            aria-label="Go to next page"
+            className="brutal-button-secondary text-xs py-1 px-3 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
         </div>
       </div>
     </div>

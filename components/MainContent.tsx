@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import DataTable from './DataTable';
 import { DataRow } from '../types';
-import { DatabaseIcon } from './icons';
+import { DatabaseIcon, ChevronDownIcon } from './icons';
 
 interface MainContentProps {
   data: DataRow[];
@@ -9,7 +9,7 @@ interface MainContentProps {
   isLoading: boolean;
   fileName: string;
   onFileNameChange: (name: string) => void;
-  onExport: () => void;
+  onExport: (type?: 'preview' | 'full') => void;
   currentPage: number;
   rowsPerPage: number;
   totalRows: number;
@@ -53,6 +53,8 @@ const MainContent: React.FC<MainContentProps> = (props) => {
     isPristine
   } = props;
 
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+
   return (
     <main className="flex-1 p-4 bg-background flex flex-col overflow-hidden relative">
       <div className="flex flex-col flex-1 bg-card border-2 border-border shadow-brutal overflow-hidden">
@@ -82,15 +84,40 @@ const MainContent: React.FC<MainContentProps> = (props) => {
                     <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
                   </div>
                 </div>
-                <button
-                  onClick={onExport}
-                  className="brutal-button-primary text-xs"
-                >
-                  Export
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+                    className="brutal-button-primary text-xs flex items-center space-x-1"
+                  >
+                    <span>Export</span>
+                    <ChevronDownIcon className="h-3 w-3" />
+                  </button>
+                  {isExportMenuOpen && (
+                    <div className="absolute right-0 top-full mt-1 bg-card border-2 border-border shadow-brutal z-50 w-56 flex flex-col">
+                      <button
+                        onClick={() => {
+                          onExport('preview');
+                          setIsExportMenuOpen(false);
+                        }}
+                        className="text-left px-4 py-2 hover:bg-accent hover:text-accent-foreground text-xs font-medium border-b border-border last:border-0"
+                      >
+                        Export Preview (Visible Rows)
+                      </button>
+                      <button
+                        onClick={() => {
+                          onExport('full');
+                          setIsExportMenuOpen(false);
+                        }}
+                        className="text-left px-4 py-2 hover:bg-accent hover:text-accent-foreground text-xs font-medium"
+                      >
+                        Load full data and export
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-            <div className="flex-1 overflow-auto">
+            <div className="flex-1 min-w-0 overflow-hidden">
               <DataTable
                 data={data}
                 tableHeaders={tableHeaders}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { FieldsIcon, DatabaseIcon } from './icons';
+import { FieldsIcon, DatabaseIcon, GithubIcon } from './icons';
 import { PanelType } from '../types';
 import { useAppDispatch, useAppState } from '../state/context';
 import { ActionType } from '../state/actions';
@@ -11,13 +11,16 @@ interface HeaderProps {
   onLoadConfig: () => void;
   configName: string;
   onConfigNameChange: (name: string) => void;
+  isGuest?: boolean;
+  onSignIn?: () => void;
 }
 
 const Header: React.FC<HeaderProps> = (props) => {
   const {
     onSaveConfig, activePanel,
     onTogglePanel, onLoadConfig,
-    configName, onConfigNameChange
+    configName, onConfigNameChange,
+    isGuest, onSignIn
   } = props;
   const { currentView } = useAppState();
   const dispatch = useAppDispatch();
@@ -33,7 +36,7 @@ const Header: React.FC<HeaderProps> = (props) => {
   return (
     <header className="bg-card border-b-2 border-border shadow-brutal z-10 flex-shrink-0">
       <div className="flex items-center justify-between px-4 py-2 bg-card border-b-2 border-border">
-        <div className="flex items-center">
+        <div className="flex items-center space-x-4">
           <a
             href="https://www.namankansal.in"
             target="_blank"
@@ -41,11 +44,24 @@ const Header: React.FC<HeaderProps> = (props) => {
             className="flex items-center hover:opacity-80 transition-opacity"
             title="Visit Portfolio"
           >
-            <img src="/favicon.png" alt="NK Logo" className="h-6 w-6 mr-2 object-contain border border-border" />
+            <img src="/favicon-symbolic.png" alt="NeuronLink" className="h-7 w-7 mr-2 object-contain" />
             <h1 className="text-xl font-bold text-primary font-mono tracking-wider uppercase">NeuronLink</h1>
           </a>
+          {isGuest && (
+            <div className="bg-yellow-400 text-black px-2 py-0.5 text-[10px] font-black uppercase tracking-tighter shadow-brutal border border-black animate-pulse">
+              Guest Mode (Limited)
+            </div>
+          )}
         </div>
         <div className="flex items-center space-x-2">
+          {isGuest && (
+            <button
+              onClick={onSignIn}
+              className="px-3 py-1 bg-primary text-primary-foreground border-2 border-border text-[11px] font-bold uppercase shadow-brutal-xs hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all mr-4"
+            >
+              Sign In to Unlock
+            </button>
+          )}
           <button
             onClick={() => handlePanelToggle('fields')}
             title="Table View"
@@ -61,6 +77,24 @@ const Header: React.FC<HeaderProps> = (props) => {
             <DatabaseIcon className="h-5 w-5" />
           </button>
           <div className="border-l-2 border-border h-6 mx-1"></div>
+          <a
+            href="https://github.com/builder-pm/NeuronLink-lakehouse"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="see source code"
+            className="p-2 border-2 border-border hover:bg-accent hover:text-accent-foreground transition-all hover:shadow-brutal-xs flex items-center justify-center"
+          >
+            <GithubIcon className="h-5 w-5" />
+          </a>
+          <a
+            href="https://namankansal.in"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Connect with me"
+            className="p-2 border-2 border-border hover:bg-accent transition-all hover:shadow-brutal-xs flex items-center justify-center bg-card"
+          >
+            <img src="/naman-favicon.svg" alt="Portfolio" className="h-5 w-5 object-contain" />
+          </a>
         </div>
       </div>
       <div className="flex items-center justify-between px-4 py-2 bg-card">
