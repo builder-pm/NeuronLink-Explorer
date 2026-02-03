@@ -49,7 +49,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 joins: state.joins,
                 tablePositions: state.tablePositions,
                 fieldGroups: state.fieldGroups,
-                modelSelectedTables: state.modelSelectedTables,
+                modelConfiguration: state.modelConfiguration,
+                confirmedModelConfiguration: state.confirmedModelConfiguration,
 
                 // User preferences
                 rowsPerPage: state.rowsPerPage,
@@ -63,16 +64,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             console.error("Failed to save state to localStorage", e);
         }
     }, [state]);
-
-    // This effect manages the dark mode class on the HTML element.
-    useEffect(() => {
-        const root = window.document.documentElement;
-        if (state.theme === 'dark') {
-            root.classList.add('dark');
-        } else {
-            root.classList.remove('dark');
-        }
-    }, [state.theme]);
 
     return (
         <AppStateContext.Provider value={state}>

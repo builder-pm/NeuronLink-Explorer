@@ -7,9 +7,9 @@ import {
 } from '../constants';
 
 export const initialPivotConfig: PivotConfig = {
-  rows: ['language'],
-  columns: [],
-  values: [{ field: 'total_jobs', aggregation: 'SUM', displayName: 'SUM of Total Jobs' }],
+    rows: ['language'],
+    columns: [],
+    values: [{ field: 'total_jobs', aggregation: 'SUM', displayName: 'SUM of Total Jobs' }],
 };
 
 const initialTablePositions = {
@@ -19,37 +19,40 @@ const initialTablePositions = {
 };
 
 export const initialState: AppState = {
-  theme: 'dark',
-  currentView: 'modeling',
-  isLoadingData: true,
-  activePanel: 'db-config',
-  isSecondaryPanelOpen: false,
-  configName: 'Untitled Configuration',
-  fileName: 'FileName_for_the_link',
-  processedData: [],
-  selectedFields: [],
-  currentPage: 1,
-  rowsPerPage: 100,
-  pivotConfig: { rows: [], columns: [], values: [] },
-  filters: [],
-  sqlQuery: 'SELECT "Please connect to a data source to begin" as message;',
-  joins: [],
-  tablePositions: {},
-  fieldGroups: { "Uncategorized": [] },
-  discoveredTables: [],
-  
-  // New model state
-  modelConfiguration: {},
-  confirmedModelConfiguration: {},
-  isModelDirty: false,
-  modelingSecondaryPanelTab: 'data',
+    theme: 'dark',
+    currentView: 'modeling',
+    isLoadingData: true,
+    activePanel: 'db-config',
+    isSecondaryPanelOpen: false,
+    configName: 'Untitled Configuration',
+    fileName: 'FileName_for_the_link',
+    processedData: [],
+    selectedFields: [],
+    analysisActiveFields: [], // Initialize new state
+    currentPage: 1,
+    rowsPerPage: 100,
+    pivotConfig: { rows: [], columns: [], values: [] },
+    filters: [],
+    sqlQuery: 'SELECT "Please connect to a data source to begin" as message;',
+    joins: [],
+    tablePositions: {},
+    fieldGroups: { "Uncategorized": [] },
+    fieldAliases: {},
+    discoveredTables: [],
 
-  // DB Connection
-  databaseType: 'athena',
-  athenaCredentials: null,
-  isLakehouseConnected: false,
-  isConnectingToLakehouse: false,
-  isDemoMode: false,
+    // New model state
+    modelConfiguration: {},
+    confirmedModelConfiguration: {},
+    isModelDirty: false,
+    modelingSecondaryPanelTab: 'data',
+
+    // DB Connection
+    databaseType: 'athena',
+    athenaCredentials: null,
+    supabaseCredentials: null,
+    isLakehouseConnected: false,
+    isConnectingToLakehouse: false,
+    isDemoMode: false,
 };
 
 export const appReducer = (state: AppState, action: AppAction): AppState => {
@@ -74,6 +77,8 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             return { ...state, processedData: action.payload, currentPage: 1, isLoadingData: false };
         case ActionType.SET_SELECTED_FIELDS:
             return { ...state, selectedFields: action.payload };
+        case ActionType.SET_ANALYSIS_ACTIVE_FIELDS:
+            return { ...state, analysisActiveFields: action.payload };
         case ActionType.UPDATE_SQL_QUERY:
             return { ...state, sqlQuery: action.payload };
         case ActionType.SET_CURRENT_PAGE:
@@ -85,15 +90,15 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         case ActionType.SET_FILTERS:
             return { ...state, filters: action.payload };
         case ActionType.ADD_FILTER:
-             const existing = state.filters.find(f => f.field === action.payload.field);
-             if (existing) {
-                 return {...state, filters: state.filters.map(f => f.field === action.payload.field ? {...f, ...action.payload, id: f.id} : f) };
-             }
-             return { ...state, filters: [...state.filters, action.payload] };
+            const existing = state.filters.find(f => f.field === action.payload.field);
+            if (existing) {
+                return { ...state, filters: state.filters.map(f => f.field === action.payload.field ? { ...f, ...action.payload, id: f.id } : f) };
+            }
+            return { ...state, filters: [...state.filters, action.payload] };
         case ActionType.UPDATE_FILTER:
-             return { ...state, filters: state.filters.map(f => f.id === action.payload.id ? action.payload : f) };
+            return { ...state, filters: state.filters.map(f => f.id === action.payload.id ? action.payload : f) };
         case ActionType.REMOVE_FILTER:
-             return { ...state, filters: state.filters.filter(f => f.id !== action.payload) };
+            return { ...state, filters: state.filters.filter(f => f.id !== action.payload) };
         case ActionType.SET_JOINS:
             return { ...state, joins: action.payload, isModelDirty: true };
         case ActionType.SET_TABLE_POSITIONS:
@@ -104,7 +109,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             return { ...state, discoveredTables: action.payload };
         }
         case ActionType.RESET_STATE:
-             return { ...initialState };
+            return { ...initialState };
         case ActionType.LOAD_CONFIG:
             const config = action.payload;
             return {
@@ -112,9 +117,11 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 pivotConfig: config.pivotConfig || state.pivotConfig,
                 filters: config.filters || state.filters,
                 selectedFields: config.selectedFields || state.selectedFields,
+                analysisActiveFields: config.analysisActiveFields || state.analysisActiveFields || [],
                 joins: config.joins || state.joins,
                 tablePositions: config.tablePositions || state.tablePositions,
                 fieldGroups: config.fieldGroups || state.fieldGroups,
+                fieldAliases: config.fieldAliases || state.fieldAliases,
                 configName: config.configName || state.configName,
                 fileName: config.fileName || state.fileName,
                 sqlQuery: config.sqlQuery || state.sqlQuery,
@@ -123,6 +130,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 isModelDirty: false, // Always start clean on load
                 databaseType: config.databaseType || state.databaseType,
                 athenaCredentials: config.athenaCredentials || state.athenaCredentials,
+                supabaseCredentials: config.supabaseCredentials || state.supabaseCredentials,
                 isDemoMode: config.isDemoMode !== undefined ? config.isDemoMode : state.isDemoMode,
             };
         case ActionType.UPDATE_PIVOT: {
@@ -130,7 +138,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             const newConfig = { ...state.pivotConfig };
             const numericFields = ['total_jobs', 'total_positions', 'source_id'];
 
-            if(targetZone === 'values') {
+            if (targetZone === 'values') {
                 const aggregation = numericFields.includes(field) ? 'SUM' : 'COUNT';
                 newConfig.values = [...newConfig.values, { field, aggregation }];
             } else {
@@ -139,7 +147,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 newConfig.values = newConfig.values.filter(v => v.field !== field);
                 newConfig[targetZone] = [...newConfig[targetZone], field];
             }
-             // Automatically select the field if it's not already
+            // Automatically select the field if it's not already
             const newSelectedFields = state.selectedFields.includes(field)
                 ? state.selectedFields
                 : [...state.selectedFields, field];
@@ -149,10 +157,10 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         case ActionType.REMOVE_PIVOT_ITEM: {
             const { item, zone } = action.payload;
             const newConfig = { ...state.pivotConfig };
-             if(zone === 'values') {
-              newConfig.values = state.pivotConfig.values.filter((_, index) => index !== item);
+            if (zone === 'values') {
+                newConfig.values = state.pivotConfig.values.filter((_, index) => index !== item);
             } else {
-              newConfig[zone] = (newConfig[zone] as string[]).filter(field => field !== item);
+                newConfig[zone] = (newConfig[zone] as string[]).filter(field => field !== item);
             }
             return { ...state, pivotConfig: newConfig };
         }
@@ -167,6 +175,8 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             return { ...state, databaseType: action.payload };
         case ActionType.SET_ATHENA_CREDENTIALS:
             return { ...state, athenaCredentials: action.payload };
+        case ActionType.SET_SUPABASE_CREDENTIALS:
+            return { ...state, supabaseCredentials: action.payload };
         case ActionType.SET_LAKEHOUSE_CONNECTION_STATUS:
             return { ...state, isLakehouseConnected: action.payload };
         case ActionType.SET_LAKEHOUSE_CONNECTING_STATUS:
@@ -189,6 +199,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                     activePanel: 'fields',
                     isSecondaryPanelOpen: true,
                     selectedFields: ['language', 'total_jobs', 'country_name', 'position_month'],
+                    analysisActiveFields: ['language', 'total_jobs', 'country_name', 'position_month'],
                     pivotConfig: initialPivotConfig,
                     sqlQuery: initialSql,
                     joins: initialJoins,
@@ -210,6 +221,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                     confirmedModelConfiguration: {},
                     isModelDirty: false,
                     selectedFields: [],
+                    analysisActiveFields: [],
                     sqlQuery: 'SELECT "Please connect to a data source to begin" as message;',
                     currentPage: 1,
                     // Keep UI config like pivot, filters, joins, positions, groups, names
@@ -228,15 +240,15 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
 
             if (isSelected === false) { // Table is being deselected
                 delete newModelConfig[tableName];
-                 // Also remove any joins associated with this table
+                // Also remove any joins associated with this table
                 newJoins = state.joins.filter(j => j.from !== tableName && j.to !== tableName);
             } else if (isSelected === true) { // Table is being selected
-                 const allFieldsForTable = state.discoveredTables.find(t => t.name === tableName)?.fields || [];
+                const allFieldsForTable = state.discoveredTables.find(t => t.name === tableName)?.fields || [];
                 newModelConfig[tableName] = allFieldsForTable;
             } else if (fields) { // Fields for an existing table are being updated
                 newModelConfig[tableName] = fields;
             }
-            
+
             return {
                 ...state,
                 modelConfiguration: newModelConfig,
@@ -252,7 +264,19 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             };
         }
         case ActionType.SET_MODELING_SECONDARY_PANEL_TAB:
-             return { ...state, modelingSecondaryPanelTab: action.payload };
+            return { ...state, modelingSecondaryPanelTab: action.payload };
+
+        case ActionType.SET_FIELD_ALIAS: {
+            const { fieldKey, alias } = action.payload;
+            return {
+                ...state,
+                fieldAliases: {
+                    ...state.fieldAliases,
+                    [fieldKey]: alias
+                },
+                isModelDirty: true
+            };
+        }
 
         default:
             return state;

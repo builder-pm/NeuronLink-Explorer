@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NeuronLink</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap"
+    rel="stylesheet">
+
+  <style>
+    .loader-overlay {
+      position: absolute;
+      inset: 0;
+      background-color: rgba(0, 0, 0, 0.6);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .loader {
+      border: 4px solid hsl(0 0% 25%);
+      border-top: 4px solid hsl(76 100% 67%);
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* Global focus styles for better accessibility */
+    *:focus-visible {
+      outline: 2px solid hsl(76 100% 67%) !important;
+      outline-offset: 2px !important;
+    }
+  </style>
+
+  <script type="module" crossorigin src="/assets/index-kGr4Lzmp.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Deyy_PgL.css">
+</head>
+
+<body class="bg-background text-foreground antialiased font-sans">
+  <div id="root"></div>
+</body>
+
+</html>

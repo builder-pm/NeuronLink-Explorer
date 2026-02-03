@@ -1,0 +1,324 @@
+@import "tailwindcss";
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
+
+    --shadow-brutal: 4px 4px 0 0 var(--border);
+    --shadow-brutal-lg: 6px 6px 0 0 var(--border);
+    --shadow-brutal-xl: 8px 8px 0 0 var(--border);
+
+    --font-sans: var(--font-space-grotesk);
+    --font-mono: var(--font-space-mono);
+}
+
+/* CYBER-BRUTALISM THEME (Enforced Dark Mode) */
+:root {
+    /* Fonts */
+    --font-space-grotesk: "Space Grotesk", sans-serif;
+    --font-space-mono: "Space Mono", monospace;
+
+    /* Colors */
+    --background: hsl(0 0% 10%);
+    /* #1a1a1a - Smooth Black */
+    --foreground: hsl(0 0% 100%);
+    /* #ffffff - Pure White */
+
+    --card: hsl(0 0% 15%);
+    /* #262626 - Dark Grey */
+    --card-foreground: hsl(0 0% 100%);
+    /* White */
+
+    --popover: hsl(0 0% 15%);
+    --popover-foreground: hsl(0 0% 100%);
+
+    --primary: hsl(76 100% 67%);
+    /* #CAFF58 - Electric Lime */
+    --primary-foreground: hsl(0 0% 10%);
+    /* Black Text on Lime */
+
+    --secondary: hsl(0 0% 20%);
+    /* Dark Grey for inactive */
+    --secondary-foreground: hsl(0 0% 100%);
+
+    --accent: hsl(76 100% 67%);
+    /* Lime is the ONLY Accent */
+    --accent-foreground: hsl(0 0% 10%);
+
+    --muted: hsl(0 0% 25%);
+    /* Subtle Grey */
+    --muted-foreground: hsl(0 0% 70%);
+    /* Light Grey Text */
+
+    --destructive: hsl(0 100% 50%);
+    /* Red */
+    --destructive-foreground: hsl(0 0% 100%);
+
+    --border: hsl(0 0% 40%);
+    /* Softer Grey Borders */
+    --input: hsl(0 0% 20%);
+    --ring: hsl(76 100% 67%);
+
+    --radius: 0rem;
+    /* Hard edges - Brutalist */
+}
+
+/* Base Styles */
+body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Neobrutalist Utilities */
+.brutal-card {
+    border-width: 2px;
+    border-color: var(--border);
+    background-color: var(--color-card);
+    box-shadow: 4px 4px 0 0 var(--border);
+    transition: all 0.1s ease;
+}
+
+.brutal-card:hover {
+    box-shadow: 6px 6px 0 0 var(--border);
+    transform: translate(-1px, -1px);
+}
+
+.brutal-button-primary {
+    border-width: 2px;
+    border-color: var(--border);
+    padding: 0.5rem 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 4px 4px 0 0 var(--border);
+    transition: all 0.1s ease;
+    background-color: var(--color-primary);
+    color: var(--color-primary-foreground);
+    cursor: pointer;
+}
+
+.brutal-button-primary:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 6px 6px 0 0 var(--border);
+}
+
+.brutal-button-primary:active {
+    transform: translate(2px, 2px);
+    box-shadow: none;
+}
+
+.brutal-button-secondary {
+    border-width: 2px;
+    border-color: var(--border);
+    padding: 0.5rem 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 3px 3px 0 0 var(--border);
+    transition: all 0.1s ease;
+    background-color: var(--color-secondary);
+    color: var(--color-secondary-foreground);
+    cursor: pointer;
+}
+
+.brutal-button-secondary:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 5px 5px 0 0 var(--border);
+}
+
+.brutal-button-secondary:active {
+    transform: translate(2px, 2px);
+    box-shadow: none;
+}
+
+.brutal-button-danger {
+    border-width: 2px;
+    border-color: var(--destructive);
+    padding: 0.5rem 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 3px 3px 0 0 var(--destructive);
+    transition: all 0.1s ease;
+    background-color: transparent;
+    color: var(--destructive);
+    cursor: pointer;
+}
+
+.brutal-button-danger:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 5px 5px 0 0 var(--destructive);
+    background-color: var(--destructive);
+    color: var(--destructive-foreground);
+}
+
+.brutal-button-danger:active {
+    transform: translate(2px, 2px);
+    box-shadow: none;
+}
+
+/* Shadow Utilities */
+.shadow-brutal {
+    box-shadow: 4px 4px 0 0 var(--border);
+}
+
+.shadow-brutal-up {
+    box-shadow: 0px -4px 0 0 var(--border);
+}
+
+.shadow-brutal-left {
+    box-shadow: -4px 0 0 0 var(--border);
+}
+
+/* Input styling */
+.brutal-input {
+    background-color: var(--input);
+    border: 2px solid var(--border);
+    color: var(--foreground);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    transition: border-color 0.1s ease, box-shadow 0.1s ease;
+}
+
+.brutal-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 3px 3px 0 0 var(--primary);
+}
+
+.brutal-input::placeholder {
+    color: var(--muted-foreground);
+}
+
+/* Select styling */
+.brutal-select {
+    background-color: var(--input);
+    border: 2px solid var(--border);
+    color: var(--foreground);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    appearance: none;
+}
+
+.brutal-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 3px 3px 0 0 var(--primary);
+}
+
+/* Checkbox styling */
+.brutal-checkbox {
+    appearance: none;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--border);
+    background-color: var(--input);
+    cursor: pointer;
+    position: relative;
+}
+
+.brutal-checkbox:checked {
+    background-color: var(--primary);
+    border-color: var(--primary);
+}
+
+.brutal-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: -1px;
+    width: 6px;
+    height: 10px;
+    border: solid var(--primary-foreground);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.brutal-checkbox:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+/* Modal overlay */
+.brutal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+}
+
+/* Scrollbar styling for dark theme */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border: 1px solid var(--background);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--muted-foreground);
+}
+
+/* ReactFlow Controls Styling */
+.react-flow-controls {
+    background: var(--card) !important;
+    border: 2px solid var(--border) !important;
+    box-shadow: 4px 4px 0 0 var(--border) !important;
+}
+
+.react-flow-controls button {
+    background: var(--card) !important;
+    border: none !important;
+    border-bottom: 1px solid var(--border) !important;
+    color: var(--foreground) !important;
+}
+
+.react-flow-controls button:hover {
+    background: var(--primary) !important;
+    color: var(--primary-foreground) !important;
+}
+
+.react-flow-controls button:last-child {
+    border-bottom: none !important;
+}
+
+.react-flow-controls button svg {
+    fill: currentColor !important;
+}
+
+.react-flow-controls button path {
+    fill: currentColor !important;
+}

@@ -4,6 +4,7 @@ import App from './App';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { AppProvider } from './state/context';
+import './styles.css';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

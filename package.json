@@ -9,20 +9,30 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
     "@google/genai": "^1.8.0",
+    "@monaco-editor/react": "^4.6.0",
+    "@supabase/supabase-js": "^2.93.3",
+    "@types/pg": "^8.16.0",
+    "@xyflow/react": "^12.10.0",
+    "dotenv": "^17.2.3",
+    "monaco-editor": "0.45.0",
+    "pg": "^8.18.0",
+    "pg-copy-streams": "^7.0.0",
+    "react": "^19.1.0",
     "react-dnd": "^16.0.1",
     "react-dnd-html5-backend": "^16.0.1",
+    "react-dom": "^19.1.0",
     "react-hot-toast": "^2.4.1",
-    "monaco-editor": "0.45.0",
-    "@monaco-editor/react": "^4.6.0",
     "sql-formatter": "^15.3.2",
     "sql.js": "1.10.3",
     "xlsx": "0.18.5"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
+    "tailwindcss": "^4.1.18",
     "typescript": "~5.7.2",
     "vite": "^6.2.0"
   }

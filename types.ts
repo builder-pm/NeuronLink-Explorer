@@ -1,5 +1,5 @@
 export interface DataRow {
-  [key: string]: string | number | null;
+    [key: string]: string | number | null;
 }
 
 export type AppView = 'analysis' | 'modeling';
@@ -68,16 +68,16 @@ export type ConnectionState = {
 } | null;
 
 export const ItemTypes = {
-  FIELD: 'field',
-  TABLE: 'table',
-  GROUP: 'group',
+    FIELD: 'field',
+    TABLE: 'table',
+    GROUP: 'group',
 };
 
 export interface FieldGroups {
     [groupName: string]: string[];
 }
 
-export type DatabaseType = 'sqlite' | 'athena';
+export type DatabaseType = 'sqlite' | 'athena' | 'supabase';
 
 export interface AthenaCredentials {
     awsAccessKeyId: string;
@@ -86,12 +86,21 @@ export interface AthenaCredentials {
     s3OutputLocation: string;
 }
 
+export interface SupabaseCredentials {
+    url: string;
+    anonKey: string;
+}
+
 export type ModelConfiguration = {
     [tableName: string]: string[]; // Map of table name to array of selected field names
 };
 
 export type ModelingSecondaryPanelTab = 'data' | 'groups';
 
+
+export interface FieldAliases {
+    [fieldKey: string]: string; // Key format: "tableName.fieldName"
+}
 
 export interface AppState {
     theme: 'light' | 'dark';
@@ -102,7 +111,8 @@ export interface AppState {
     configName: string;
     fileName: string;
     processedData: DataRow[];
-    selectedFields: string[];
+    selectedFields: string[]; // Fields selected in DB Config (the "Universe" for analysis)
+    analysisActiveFields: string[]; // Fields selected in Table View (what is shown in the grid)
     currentPage: number;
     rowsPerPage: number;
     pivotConfig: PivotConfig;
@@ -111,8 +121,9 @@ export interface AppState {
     joins: Join[];
     tablePositions: { [key: string]: { top: number; left: number } };
     fieldGroups: FieldGroups;
+    fieldAliases: FieldAliases;
     discoveredTables: { name: string, fields: string[] }[];
-    
+
     // New model state
     modelConfiguration: ModelConfiguration; // Unconfirmed model being edited
     confirmedModelConfiguration: ModelConfiguration; // The model used for generating 'availableFields'
@@ -122,6 +133,7 @@ export interface AppState {
     // DB Connection
     databaseType: DatabaseType;
     athenaCredentials: AthenaCredentials | null;
+    supabaseCredentials: SupabaseCredentials | null;
     isLakehouseConnected: boolean;
     isConnectingToLakehouse: boolean;
     isDemoMode: boolean;
