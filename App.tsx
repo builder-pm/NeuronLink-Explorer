@@ -5,19 +5,22 @@ import Header from './components/Header';
 import MainContent from './components/MainContent';
 import Sidebar from './components/Sidebar';
 import PivotConfigPanel from './components/PivotConfigPanel';
-import DataModelCanvas from './components/DataModelCanvas';
-import DbConfigPanel from './components/DbConfigPanel';
 import PanelToggle from './components/PanelToggle';
 import DbCredentialsModal from './components/DbCredentialsModal';
 import TablePreviewModal from './components/TablePreviewModal';
 import ModelingSecondaryPanel from './components/ModelingSecondaryPanel';
+import ModelingMainArea from './components/ModelingMainArea';
+import ModelingPrimaryPanel from './components/ModelingPrimaryPanel';
+import MasterView from './components/views/MasterView';
 import { DataRow, PanelType, AIAction, Filter, PivotConfig, DatabaseType, AthenaCredentials, SupabaseCredentials, AppState, AppView, FieldGroups, Join, ModelConfiguration, FieldAliases } from './types';
+import { generatePrompts } from './utils/promptSuggestions';
 import { useAppState, useAppDispatch } from './state/context';
 import { ActionType, AppAction } from './state/actions';
 import { generateQuery, generatePreviewQuery } from './utils/dataProcessing';
 import * as db from './services/database';
 import * as backend from './services/backend';
 import { appSupabase } from './services/appSupabase';
+import { syncSchemaRegistry } from './services/schemaRegistry';
 import { initLogging, logEvent } from './services/logger';
 import AuthModal from './components/AuthModal'; // Import Auth Modal
 
@@ -60,6 +63,8 @@ const SecondaryPanelComponent: React.FC<SecondaryPanelProps> = ({
         onPivotValueRename={(index, newName) => dispatch({ type: ActionType.RENAME_PIVOT_VALUE, payload: { index, newName } })}
         fieldAliases={state.fieldAliases}
         onBatchUpdate={onBatchUpdate}
+        dispatch={dispatch}
+        availableFields={allAvailableFields}
       />
     );
   }
@@ -87,20 +92,21 @@ interface PrimaryPanelProps {
   executeQuery: (query: string) => Promise<DataRow[]>;
   availableFields: string[];
   dispatch: React.Dispatch<AppAction>;
-  onConfigureCredentialsClick: () => void;
-  isConnecting: boolean;
-  isConnected: boolean;
-  dbType: DatabaseType;
   isDemoMode: boolean;
-  onRefreshData: () => void;
   fieldAliases: FieldAliases;
   isGuest?: boolean;
+  state: AppState;
+  // New props for SemanticContext
+  modelConfiguration: ModelConfiguration;
+  confirmedModelConfiguration: ModelConfiguration;
+  joins: Join[];
 }
 
 const PrimaryPanelComponent: React.FC<PrimaryPanelProps> = ({
   currentView, activePanel, selectedFields, onFieldChange, onAIAction, fieldGroups,
   executeQuery, availableFields, dispatch,
-  onConfigureCredentialsClick, isConnecting, isConnected, dbType, isDemoMode, onRefreshData, fieldAliases, isGuest
+  isDemoMode, fieldAliases, isGuest,
+  modelConfiguration, confirmedModelConfiguration, joins, state
 }) => {
   if (currentView === 'analysis') {
     return (
@@ -114,27 +120,21 @@ const PrimaryPanelComponent: React.FC<PrimaryPanelProps> = ({
         availableFields={availableFields} // This receives state.selectedFields from parent
         fieldAliases={fieldAliases}
         isGuest={isGuest}
+        semanticContext={{
+          configName: 'Current Config',
+          view: currentView,
+          modelConfiguration: isDemoMode ? {} : (Object.keys(modelConfiguration).length > 0 ? modelConfiguration : confirmedModelConfiguration),
+          joins: joins,
+          fieldAliases: fieldAliases
+        }}
+        suggestedPrompts={useMemo(() => generatePrompts(fieldGroups), [fieldGroups])}
       />
     );
   }
   if (currentView === 'modeling') {
-    return (
-      <DbConfigPanel
-        selectedFields={selectedFields}
-        onFieldChange={onFieldChange}
-        availableFields={availableFields}
-        onConfigureCredentialsClick={onConfigureCredentialsClick}
-        isConnecting={isConnecting}
-        isConnected={isConnected}
-        dbType={dbType}
-        isDemoMode={isDemoMode}
-        onToggleDemoMode={() => dispatch({ type: ActionType.TOGGLE_DEMO_MODE })}
-        dispatch={dispatch}
-        onRefreshData={onRefreshData}
-        fieldAliases={fieldAliases}
-      />
-    );
+    return <ModelingPrimaryPanel state={state as AppState} dispatch={dispatch} />;
   }
+
   return null;
 };
 const MemoizedPrimaryPanel = memo(PrimaryPanelComponent);
@@ -152,18 +152,22 @@ interface MainAreaProps {
   onRowsPerPageChange: (value: number) => void;
   onExport: (type?: 'preview' | 'full') => void;
   isDemoMode: boolean;
-  joins: Join[];
-  tablePositions: { [key: string]: { top: number; left: number; } };
   state: AppState;
   tablesForCanvas: { name: string; fields: string[]; }[];
-  isModelDirty: boolean;
   onPreviewTable: (table: string) => void;
+  // DB Props
+  onConfigureCredentialsClick: () => void;
+  onRefreshData: () => void;
+  isConnecting: boolean;
+  isConnected: boolean;
+  dbType: DatabaseType;
 }
 
 const MainAreaComponent: React.FC<MainAreaProps> = ({
   currentView, paginatedData, tableHeaders, isLoading, fileName, dispatch, currentPage,
   rowsPerPage, totalRows, onRowsPerPageChange, onExport, isDemoMode,
-  joins, tablePositions, state, tablesForCanvas, isModelDirty, onPreviewTable
+  state, tablesForCanvas, onPreviewTable,
+  onConfigureCredentialsClick, onRefreshData, isConnecting, isConnected, dbType
 }) => {
   if (currentView === 'analysis') {
     return (
@@ -185,23 +189,7 @@ const MainAreaComponent: React.FC<MainAreaProps> = ({
     );
   }
   if (currentView === 'modeling') {
-    return (
-      <DataModelCanvas
-        onBack={() => dispatch({ type: ActionType.SET_VIEW, payload: 'analysis' })}
-        joins={joins}
-        onJoinsChange={(newJoins) => dispatch({ type: ActionType.SET_JOINS, payload: newJoins })}
-        tablePositions={tablePositions}
-        onTablePositionsChange={(positions) => {
-          const newPositions = typeof positions === 'function' ? positions(state.tablePositions) : positions;
-          dispatch({ type: ActionType.SET_TABLE_POSITIONS, payload: newPositions });
-        }}
-        tables={tablesForCanvas}
-        isModelDirty={isModelDirty}
-        onConfirmModel={() => dispatch({ type: ActionType.CONFIRM_MODEL })}
-        onPreviewTable={onPreviewTable}
-        fieldAliases={state.fieldAliases}
-      />
-    );
+    return <ModelingMainArea state={state} dispatch={dispatch} onPreviewTable={onPreviewTable} />;
   }
   return null;
 }
@@ -236,6 +224,7 @@ const App: React.FC = () => {
 
       if (session?.user) {
         setUser(session.user);
+        dispatch({ type: ActionType.SET_USER, payload: session.user as any });
         setIsGuest(false);
         localStorage.removeItem('neuronlink_guest_mode');
         initLogging();
@@ -249,6 +238,7 @@ const App: React.FC = () => {
 
     const { data: { subscription } } = appSupabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      dispatch({ type: ActionType.SET_USER, payload: (session?.user as any) ?? null });
       if (session?.user) {
         setIsGuest(false);
         localStorage.removeItem('neuronlink_guest_mode');
@@ -290,45 +280,17 @@ const App: React.FC = () => {
     document.body.style.userSelect = 'none';
   }, [rightPanelWidth]);
 
-  const connectToLakehouse = useCallback(async (credentials: AthenaCredentials) => {
-    dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTING_STATUS, payload: true });
-    toast.loading('Connecting to Lakehouse...', { id: 'lakehouse-connect' });
-
-    const { success, message } = await backend.testAthenaConnection(credentials);
-
-    if (success) {
-      dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTION_STATUS, payload: true });
-      toast.success('Connection successful! Fetching tables...', { id: 'lakehouse-connect' });
-      logEvent('DATA', 'DB_CONNECT', { type: 'athena', region: credentials.awsRegion });
-
-      try {
-        const tables = await backend.fetchLakehouseTables(credentials);
-        await db.resetAndLoadData(tables);
-
-        const discovered = await db.discoverTables();
-        dispatch({ type: ActionType.SET_DISCOVERED_TABLES, payload: discovered });
-
-        toast.success('Lakehouse data loaded!', { id: 'lakehouse-connect' });
-      } catch (e: any) {
-        toast.error(`Failed to load data: ${e.message}`, { id: 'lakehouse-connect' });
-        dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTION_STATUS, payload: false });
-      }
-    } else {
-      dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTION_STATUS, payload: false });
-      toast.error(`Connection failed: ${message}`, { id: 'lakehouse-connect' });
-    }
-    dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTING_STATUS, payload: false });
-  }, [dispatch]);
-
   const connectToSupabase = useCallback(async (credentials: SupabaseCredentials) => {
     dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTING_STATUS, payload: true });
+    // ID 'supabase-connect' allows us to update the toast status (loading -> success/error)
     toast.loading('Connecting to Supabase...', { id: 'supabase-connect' });
 
     const { success, message } = await backend.testSupabaseConnection(credentials);
 
     if (success) {
       dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTION_STATUS, payload: true });
-      toast.success('Connection successful! Fetching tables...', { id: 'supabase-connect' });
+      // Update toast to indicate connection passed but data is loading
+      toast.loading('Connection verified! Loading tables...', { id: 'supabase-connect' });
       logEvent('DATA', 'DB_CONNECT', { type: 'supabase' });
 
       try {
@@ -338,7 +300,23 @@ const App: React.FC = () => {
         const discovered = await db.discoverTables();
         dispatch({ type: ActionType.SET_DISCOVERED_TABLES, payload: discovered });
 
-        toast.success('DVD Rental database loaded!', { id: 'supabase-connect' });
+        // Sync Schema Registry
+        try {
+          const registry = await syncSchemaRegistry(credentials);
+          dispatch({ 
+            type: ActionType.SET_SCHEMA_REGISTRY_DATA, 
+            payload: { data: registry.data, driftDetected: registry.driftDetected } 
+          });
+          if (registry.driftDetected) {
+            toast('Schema drift detected since last sync.', { icon: '⚠️' });
+            logEvent('DATA', 'SCHEMA_DRIFT', { db_hash: registry.data.dbUrlHash });
+          }
+        } catch (registryError) {
+          console.error('Schema registry sync failed:', registryError);
+        }
+
+        // Final success message
+        toast.success('DVD Rental database loaded and ready!', { id: 'supabase-connect' });
       } catch (e: any) {
         toast.error(`Failed to load data: ${e.message}`, { id: 'supabase-connect' });
         dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTION_STATUS, payload: false });
@@ -357,9 +335,7 @@ const App: React.FC = () => {
         await db.init(!isDemoMode);
         setDbService(db);
 
-        if (databaseType === 'athena' && athenaCredentials && !isDemoMode) {
-          await connectToLakehouse(athenaCredentials);
-        } else if (databaseType === 'supabase' && supabaseCredentials && !isDemoMode) {
+        if (databaseType === 'supabase' && supabaseCredentials && !isDemoMode) {
           await connectToSupabase(supabaseCredentials);
         } else if ((databaseType === 'athena' && !athenaCredentials && !isDemoMode) || (databaseType === 'supabase' && !supabaseCredentials && !isDemoMode)) {
           setIsCredsModalOpen(true);
@@ -375,9 +351,7 @@ const App: React.FC = () => {
       }
     }
     initDb();
-  }, [dispatch, isDemoMode, connectToLakehouse, connectToSupabase, databaseType, athenaCredentials, supabaseCredentials]);
-
-
+  }, [dispatch, isDemoMode, connectToSupabase, databaseType, athenaCredentials, supabaseCredentials]);
 
   // Auto-update SQL query when model changes (Task 7)
   useEffect(() => {
@@ -391,15 +365,12 @@ const App: React.FC = () => {
       state.fieldAliases
     );
 
-    // Only update if query is different to avoid cursor jumps if possible, 
-    // though replacing value usually resets cursor. 
-    // Ideally we'd only do this if the *semantics* changed.
-    // For now, simple update.
     if (query && query !== sqlQuery) {
       dispatch({ type: ActionType.UPDATE_SQL_QUERY, payload: query });
     }
-  }, [modelConfiguration, joins, discoveredTables, dispatch, state.fieldAliases]); // sqlQuery intentionally omitted to avoid loops
+  }, [modelConfiguration, joins, discoveredTables, dispatch, state.fieldAliases]);
 
+  // Run Query Effect
   useEffect(() => {
     if (!dbService || (discoveredTables.length === 0 && !isLakehouseConnected && !isDemoMode)) return;
 
@@ -415,30 +386,25 @@ const App: React.FC = () => {
           analysisActiveFields
         );
 
-        const fullQuery: string | null = fullQueryRaw;
-
-        let queryToRun: string | null = fullQuery;
-        if (isGuest && fullQuery) {
-          // Force 10 row limit for guests
-          queryToRun = fullQuery.replace(/LIMIT\s+\d+/i, 'LIMIT 10');
+        let queryToRun: string | null = fullQueryRaw;
+        if (isGuest && fullQueryRaw) {
+          queryToRun = fullQueryRaw.replace(/LIMIT\s+\d+/i, 'LIMIT 10');
           if (!queryToRun.match(/LIMIT 10/i)) {
-            queryToRun = `${fullQuery} LIMIT 10`;
+            queryToRun = `${fullQueryRaw} LIMIT 10`;
           }
         }
 
-        if (queryToRun && typeof queryToRun === 'string' && queryToRun.length > 0) {
+        if (queryToRun && queryToRun.length > 0) {
           const startTime = performance.now();
           const results = await dbService.executeQuery(queryToRun);
           dispatch({ type: ActionType.SET_PROCESSED_DATA, payload: results });
 
           logEvent('DATA', 'QUERY_EXECUTE', {
-            query_snippet: fullQuery.substring(0, 50),
+            query_snippet: queryToRun.substring(0, 50),
             duration_ms: Math.round(performance.now() - startTime),
             row_count: results.length,
             success: true
           });
-        } else {
-          dispatch({ type: ActionType.SET_PROCESSED_DATA, payload: [] });
         }
       } catch (error: any) {
         console.error("Error executing query:", error);
@@ -448,13 +414,11 @@ const App: React.FC = () => {
         dispatch({ type: ActionType.SET_LOADING, payload: false });
       }
     };
-
     runQuery();
   }, [dbService, sqlQuery, pivotConfig, filters, joins, confirmedModelConfiguration, discoveredTables, dispatch, isLakehouseConnected, isDemoMode, state.fieldAliases, analysisActiveFields]);
 
   const handleRefreshData = useCallback(() => {
     if (!dbService) return;
-
     const runQuery = async () => {
       dispatch({ type: ActionType.SET_LOADING, payload: true });
       try {
@@ -477,194 +441,99 @@ const App: React.FC = () => {
         dispatch({ type: ActionType.SET_LOADING, payload: false });
       }
     };
-
     runQuery();
   }, [dbService, dispatch, filters, joins, confirmedModelConfiguration, pivotConfig, discoveredTables]);
 
   const handleExport = useCallback(async (type?: 'preview' | 'full') => {
     if (isGuest) {
-      toast.error('Exporting is disabled in Guest Mode. Please sign in to download data.');
+      toast.error('Exporting is disabled in Guest Mode.');
       return;
     }
     try {
       let exportData = processedData;
-
       if (type === 'full') {
         if (!dbService || !sqlQuery) {
-          toast.error("Cannot export full data: Database or query not ready.");
+          toast.error("Database or query not ready.");
           return;
         }
-        const toastId = toast.loading("Fetching full dataset (this may take a moment)...");
-
-        // Remove any LIMIT clause to get full results
-        // Regex handles "LIMIT 100" or "LIMIT 100 OFFSET 0" case insensitive
+        const toastId = toast.loading("Fetching full dataset...");
         const fullQuery = sqlQuery.replace(/LIMIT\s+\d+(\s+OFFSET\s+\d+)?/i, '');
-
         try {
-          const results = await dbService.executeQuery(fullQuery);
-          exportData = results;
+          exportData = await dbService.executeQuery(fullQuery);
           toast.dismiss(toastId);
         } catch (err: any) {
           toast.dismiss(toastId);
-          toast.error(`Failed to fetch full data: ${err.message}`);
+          toast.error(`Failed to fetch: ${err.message}`);
           return;
         }
       }
-
       if (exportData.length === 0) {
         toast.error("No data to export.");
         return;
       }
-
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
-      const filename = `${fileName || 'data'}.xlsx`;
-      XLSX.writeFile(workbook, filename);
+      XLSX.writeFile(workbook, `${fileName || 'data'}.xlsx`);
       toast.success(`Export successful! (${exportData.length} rows)`);
-
-      logEvent('DATA', 'EXPORT', { format: 'xlsx', rows: exportData.length, filename });
-
     } catch (error) {
       console.error("Export failed:", error);
-      toast.error("An error occurred during export.");
+      toast.error("Export failed.");
     }
   }, [processedData, fileName, dbService, sqlQuery]);
-
-  const tableHeaders = useMemo(() => {
-    if (processedData.length > 0) {
-      return Object.keys(processedData[0]);
-    }
-    return [];
-  }, [processedData]);
-
-  const paginatedData = useMemo(() => {
-    const startIndex = (currentPage - 1) * rowsPerPage;
-    return processedData.slice(startIndex, startIndex + rowsPerPage);
-  }, [processedData, currentPage, rowsPerPage]);
 
   const handleRowsPerPageChange = useCallback((value: number) => {
     dispatch({ type: ActionType.SET_ROWS_PER_PAGE, payload: value });
   }, [dispatch]);
 
-  const handleSaveConfig = useCallback(() => {
-    const config = {
-      pivotConfig, filters, selectedFields, joins, tablePositions,
-      fieldGroups, configName, fileName, sqlQuery, modelConfiguration,
-      confirmedModelConfiguration,
-      databaseType, athenaCredentials, supabaseCredentials, isDemoMode,
-    };
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${configName.replace(/\s+/g, '_') || 'config'}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast.success('Configuration saved successfully!');
-    logEvent('CONFIG', 'CONFIG_SAVE', { name: configName, fileName });
-  }, [pivotConfig, filters, selectedFields, joins, tablePositions, fieldGroups, configName, fileName, sqlQuery, modelConfiguration, confirmedModelConfiguration, databaseType, athenaCredentials, supabaseCredentials, isDemoMode]);
-
-  const handleLoadConfig = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          try {
-            const config = JSON.parse(event.target?.result as string);
-            dispatch({ type: ActionType.LOAD_CONFIG, payload: config });
-            toast.success(`Configuration '${file.name}' loaded.`);
-            if (config.databaseType === 'athena' && config.athenaCredentials) {
-              await connectToLakehouse(config.athenaCredentials);
-            } else if (config.databaseType === 'supabase' && config.supabaseCredentials) {
-              await connectToSupabase(config.supabaseCredentials);
-            }
-          } catch (error) {
-            console.error("Error loading config:", error);
-            toast.error("Failed to load or parse configuration file.");
-          }
-        };
-        reader.readAsText(file);
-      }
-    };
-    input.click();
-  }, [dispatch, connectToLakehouse, connectToSupabase]);
-
   const handleAIAction = useCallback(async (action: AIAction) => {
-    if (isGuest) {
-      toast.error('AI features require an account. Sign in to unlock!');
-      return;
-    }
+    if (isGuest) return toast.error('Sign in to unlock!');
     if (action.action === 'pivot') {
-      const pivotUpdate = action.config as Partial<PivotConfig>;
-      dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, ...pivotUpdate } });
+      dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, ...action.config as Partial<PivotConfig> } });
     } else if (action.action === 'filter') {
       const newFilter = action.config as Filter;
       dispatch({ type: ActionType.ADD_FILTER, payload: { ...newFilter, id: Date.now().toString() } });
-      logEvent('ANALYSIS', 'FILTER_ADD', { field: newFilter.field, operator: newFilter.operator });
+    } else if (action.action === 'propose_model' && action.modelProposal) {
+      if (currentView !== 'modeling') dispatch({ type: ActionType.SET_VIEW, payload: 'modeling' });
+      dispatch({ type: ActionType.SET_JOINS, payload: action.modelProposal.joins });
+      dispatch({ type: ActionType.SET_MODEL_CONFIGURATION, payload: action.modelProposal.modelConfiguration });
+      toast.success("AI Proposal Applied");
+    } else if (action.action === 'propose_analysis' && action.analysisProposal) {
+      dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: action.analysisProposal.pivotConfig });
+      dispatch({ type: ActionType.SET_FILTERS, payload: action.analysisProposal.filters });
+      toast.success("AI Analysis applied!");
     }
-  }, [dispatch, pivotConfig]);
+  }, [dispatch, pivotConfig, isGuest, currentView]);
 
   const handleDbFieldChange = useCallback((field: string, isSelected: boolean) => {
-    const newSelectedFields = isSelected
-      ? [...new Set([...selectedFields, field])]
-      : selectedFields.filter(f => f !== field);
+    const newSelectedFields = isSelected ? [...new Set([...selectedFields, field])] : selectedFields.filter(f => f !== field);
     dispatch({ type: ActionType.SET_SELECTED_FIELDS, payload: newSelectedFields });
   }, [dispatch, selectedFields]);
 
   const handleAnalysisFieldChange = useCallback((field: string, isSelected: boolean) => {
-    const newFields = isSelected
-      ? [...new Set([...analysisActiveFields, field])]
-      : analysisActiveFields.filter(f => f !== field);
+    const newFields = isSelected ? [...new Set([...analysisActiveFields, field])] : analysisActiveFields.filter(f => f !== field);
     dispatch({ type: ActionType.SET_ANALYSIS_ACTIVE_FIELDS, payload: newFields });
-
-    // Sync to Pivot Rows (Requirement: "added in the rows part... indicating table being created")
-    if (isSelected) {
-      if (!pivotConfig.rows.includes(field)) {
-        const newPivotConfig = { ...pivotConfig, rows: [...pivotConfig.rows, field] };
-        dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: newPivotConfig });
-      }
-    } else {
-      // Optional: Remove from rows if deselected to keep in sync
-      if (pivotConfig.rows.includes(field)) {
-        const newPivotConfig = { ...pivotConfig, rows: pivotConfig.rows.filter(f => f !== field) };
-        dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: newPivotConfig });
-      }
+    if (isSelected && !pivotConfig.rows.includes(field)) {
+      dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, rows: [...pivotConfig.rows, field] } });
+    } else if (!isSelected && pivotConfig.rows.includes(field)) {
+      dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, rows: pivotConfig.rows.filter(f => f !== field) } });
     }
   }, [dispatch, analysisActiveFields, pivotConfig]);
 
-  const handlePivotBatchUpdate = useCallback((newConfig: PivotConfig, newFilters: Filter[]) => {
-    dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: newConfig });
-    dispatch({ type: ActionType.SET_FILTERS, payload: newFilters });
-    logEvent('ANALYSIS', 'PIVOT_UPDATE', {
-      rows: newConfig.rows,
-      cols: newConfig.columns,
-      values: newConfig.values.length,
-      filters: newFilters.length
-    });
-  }, [dispatch]);
 
-  const handlePreviewTable = useCallback(async (tableName: string) => {
-    if (!dbService) return;
-    dispatch({ type: ActionType.SET_LOADING, payload: true });
-    try {
-      // Use double quotes for identifiers to be compatible with SQLite/standard SQL
-      const results = await dbService.executeQuery(`SELECT * FROM "${tableName}" LIMIT 10`);
-      setPreviewData({ name: tableName, data: results });
-    } catch (e: any) {
-      toast.error(`Failed to preview table: ${e.message}`);
-    } finally {
-      dispatch({ type: ActionType.SET_LOADING, payload: false });
+  const handleTestConnection = useCallback(async (type: DatabaseType, creds: AthenaCredentials | SupabaseCredentials | null) => {
+    if (type === 'supabase' && creds) {
+      toast.loading('Testing connection...', { id: 'test-conn' });
+      const { success, message } = await backend.testSupabaseConnection(creds as SupabaseCredentials);
+      if (success) {
+        toast.success('Connection verified successfully!', { id: 'test-conn' });
+      } else {
+        toast.error(`Connection failed: ${message}`, { id: 'test-conn' });
+      }
+    } else if (type === 'sqlite') {
+      toast.success('SQLite (In-Browser) is available.', { id: 'test-conn' });
     }
-  }, [dbService, dispatch]);
-
-
+  }, []);
 
   const handleSaveCredentialsAndConnect = useCallback(async (type: DatabaseType, creds: AthenaCredentials | SupabaseCredentials | null) => {
     if (type === 'supabase' && creds) {
@@ -675,24 +544,16 @@ const App: React.FC = () => {
       // Store credentials so they persist
       dispatch({ type: ActionType.SET_SUPABASE_CREDENTIALS, payload: creds as SupabaseCredentials });
       await connectToSupabase(creds as SupabaseCredentials);
-    } else if (type === 'athena' && creds) {
-      if (isDemoMode) {
-        dispatch({ type: ActionType.TOGGLE_DEMO_MODE });
-      }
-      dispatch({ type: ActionType.SET_DATABASE_TYPE, payload: type });
-      dispatch({ type: ActionType.SET_ATHENA_CREDENTIALS, payload: creds as AthenaCredentials });
-      await connectToLakehouse(creds as AthenaCredentials);
     } else {
       if (!isDemoMode) {
         dispatch({ type: ActionType.TOGGLE_DEMO_MODE });
       }
       dispatch({ type: ActionType.SET_DATABASE_TYPE, payload: 'sqlite' });
-      dispatch({ type: ActionType.SET_ATHENA_CREDENTIALS, payload: null });
       dispatch({ type: ActionType.SET_LAKEHOUSE_CONNECTION_STATUS, payload: false });
       toast.success("Switched to in-browser SQLite with demo data.");
     }
     setIsCredsModalOpen(false);
-  }, [dispatch, connectToLakehouse, connectToSupabase, isDemoMode]);
+  }, [dispatch, connectToSupabase, isDemoMode]);
 
   const availableFields = useMemo(() => {
     // Priority 1: Use draft modelConfiguration if it has any tables selected
@@ -770,6 +631,40 @@ const App: React.FC = () => {
     return groups;
   }, [modelConfiguration, confirmedModelConfiguration, fieldGroups]);
 
+  const tableHeaders = useMemo(() => {
+    if (processedData.length === 0) return [];
+    return Object.keys(processedData[0]);
+  }, [processedData]);
+
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * rowsPerPage;
+    return processedData.slice(start, start + rowsPerPage);
+  }, [processedData, currentPage, rowsPerPage]);
+
+  const handlePivotBatchUpdate = useCallback((newConfig: PivotConfig, newFilters: Filter[]) => {
+    dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: newConfig });
+    dispatch({ type: ActionType.SET_FILTERS, payload: newFilters });
+    logEvent('ANALYSIS', 'PIVOT_UPDATE', {
+      rows: newConfig.rows,
+      cols: newConfig.columns,
+      values: newConfig.values.length,
+      filters: newFilters.length
+    });
+  }, [dispatch]);
+
+  const handlePreviewTable = useCallback(async (tableName: string) => {
+    if (!dbService) return;
+    dispatch({ type: ActionType.SET_LOADING, payload: true });
+    try {
+      // Use double quotes for identifiers to be compatible with SQLite/standard SQL
+      const results = await dbService.executeQuery(`SELECT * FROM "${tableName}" LIMIT 10`);
+      setPreviewData({ name: tableName, data: results });
+    } catch (e: any) {
+      toast.error(`Failed to preview table: ${e.message}`);
+    } finally {
+      dispatch({ type: ActionType.SET_LOADING, payload: false });
+    }
+  }, [dbService, dispatch]);
 
   const executeQuery = useCallback(async (query: string) => {
     if (!dbService) return [];
@@ -825,10 +720,8 @@ const App: React.FC = () => {
         }}
       />
       <Header
-        onSaveConfig={handleSaveConfig}
         activePanel={activePanel}
         onTogglePanel={(panel) => dispatch({ type: ActionType.SET_ACTIVE_PANEL, payload: panel })}
-        onLoadConfig={handleLoadConfig}
         configName={configName}
         onConfigNameChange={(name) => dispatch({ type: ActionType.SET_CONFIG_NAME, payload: name })}
         isGuest={isGuest}
@@ -836,87 +729,124 @@ const App: React.FC = () => {
           setIsGuest(false);
           localStorage.removeItem('neuronlink_guest_mode');
         }}
+        user={user}
+        onSignOut={async () => {
+          await appSupabase.auth.signOut();
+          setUser(null);
+          setIsGuest(false);
+        }}
       />
-      <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex flex-col relative min-w-0">
-          <MemoizedMainArea
-            currentView={currentView}
-            paginatedData={paginatedData}
-            tableHeaders={tableHeaders}
-            isLoading={isLoadingData}
-            fileName={fileName}
+
+      {/* Define these variables before using them in MasterView or MainArea */}
+      {(() => {
+        const onConfigureCredentialsClick = () => setIsCredsModalOpen(true);
+        const onRefreshData = handleRefreshData;
+        const isConnecting = isConnectingToLakehouse;
+        const isConnected = isLakehouseConnected;
+        const dbType = databaseType;
+
+        return currentView === 'modeling' ? (
+          <MasterView
+            state={state as AppState}
             dispatch={dispatch}
-            currentPage={currentPage}
-            rowsPerPage={rowsPerPage}
-            totalRows={processedData.length}
-            onRowsPerPageChange={handleRowsPerPageChange}
-            onExport={handleExport}
-            isDemoMode={isDemoMode}
-            joins={joins}
-            tablePositions={tablePositions}
-            state={state}
-            tablesForCanvas={tablesForCanvas}
-            isModelDirty={isModelDirty}
+            sqlQuery={sqlQuery}
+            executeQuery={executeQuery}
             onPreviewTable={handlePreviewTable}
+            onConfigureCredentialsClick={onConfigureCredentialsClick}
+            onRefreshData={onRefreshData}
+            isConnecting={isConnecting}
+            isConnected={isConnected}
+            dbType={dbType}
+            previewData={previewData}
+            onClearPreview={() => setPreviewData(null)}
           />
-          <PanelToggle
-            isOpen={isSecondaryPanelOpen}
-            onToggle={() => dispatch({ type: ActionType.TOGGLE_SECONDARY_PANEL })}
-          />
-        </div>
-        <div className="flex flex-shrink-0 shadow-brutal-left z-10 border-l-4 border-border relative">
-          <div className={`transition-[width] duration-300 ease-in-out ${isSecondaryPanelOpen ? 'w-80' : 'w-0'} overflow-hidden flex-shrink-0 h-full`}>
-            <MemoizedSecondaryPanel
-              currentView={currentView}
-              pivotConfig={pivotConfig}
-              filters={filters}
-              dispatch={dispatch}
-              fieldGroups={dynamicFieldGroups}
-              allAvailableFields={availableFields}
-              state={state}
-              sqlQuery={sqlQuery}
-              executeQuery={executeQuery}
-              onPreviewTable={handlePreviewTable}
-              onBatchUpdate={handlePivotBatchUpdate}
-            />
-          </div>
+        ) : (
+          <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col relative min-w-0">
+              <MemoizedMainArea
+                currentView={currentView}
+                paginatedData={paginatedData}
+                tableHeaders={tableHeaders}
+                isLoading={isLoadingData}
+                fileName={fileName}
+                dispatch={dispatch}
+                currentPage={currentPage}
+                rowsPerPage={rowsPerPage}
+                totalRows={processedData.length}
+                onRowsPerPageChange={handleRowsPerPageChange}
+                onExport={handleExport}
+                isDemoMode={isDemoMode}
+                state={state}
+                tablesForCanvas={tablesForCanvas}
+                onPreviewTable={handlePreviewTable}
+                onConfigureCredentialsClick={onConfigureCredentialsClick}
+                onRefreshData={onRefreshData}
+                isConnecting={isConnecting}
+                isConnected={isConnected}
+                dbType={dbType}
+              />
+              <PanelToggle
+                isOpen={isSecondaryPanelOpen}
+                onToggle={() => dispatch({ type: ActionType.TOGGLE_SECONDARY_PANEL })}
+              />
+            </div>
+            <div className="flex flex-shrink-0 shadow-brutal-left z-10 border-l-4 border-border relative">
+              <div className={`transition-[width] duration-300 ease-in-out ${isSecondaryPanelOpen ? 'w-80' : 'w-0'} overflow-hidden flex-shrink-0 h-full`}>
+                <MemoizedSecondaryPanel
+                  currentView={currentView}
+                  pivotConfig={pivotConfig}
+                  filters={filters}
+                  dispatch={dispatch}
+                  fieldGroups={dynamicFieldGroups}
+                  allAvailableFields={availableFields}
+                  state={state}
+                  sqlQuery={sqlQuery}
+                  executeQuery={executeQuery}
+                  onPreviewTable={handlePreviewTable}
+                  onBatchUpdate={handlePivotBatchUpdate}
+                />
+              </div>
 
-          <div
-            className="w-1 cursor-col-resize hover:bg-primary/50 transition-colors flex flex-col justify-center items-center z-50 absolute left-0 top-0 bottom-0 -ml-0.5 hover:w-2"
-            onMouseDown={startResizing}
-            title="Drag to resize panel"
-          />
+              <div
+                className="w-1 cursor-col-resize hover:bg-primary/50 transition-colors flex flex-col justify-center items-center z-50 absolute left-0 top-0 bottom-0 -ml-0.5 hover:w-2"
+                onMouseDown={startResizing}
+                title="Drag to resize panel"
+              />
 
-          <div style={{ width: rightPanelWidth }} className="flex-shrink-0 overflow-hidden bg-card">
-            <MemoizedPrimaryPanel
-              currentView={currentView}
-              activePanel={activePanel}
-              selectedFields={currentView === 'analysis' ? analysisActiveFields : selectedFields}
-              onFieldChange={currentView === 'analysis' ? handleAnalysisFieldChange : handleDbFieldChange}
-              onAIAction={handleAIAction}
-              fieldGroups={dynamicFieldGroups}
-              executeQuery={executeQuery}
-              availableFields={currentView === 'analysis' ? selectedFields : availableFields}
-              dispatch={dispatch}
-              onConfigureCredentialsClick={() => setIsCredsModalOpen(true)}
-              isConnecting={isConnectingToLakehouse}
-              isConnected={isLakehouseConnected}
-              dbType={databaseType}
-              isDemoMode={isDemoMode}
-              onRefreshData={handleRefreshData}
-              fieldAliases={state.fieldAliases}
-              isGuest={isGuest}
-            />
+              <div style={{ width: rightPanelWidth }} className="flex-shrink-0 overflow-hidden bg-card">
+                <MemoizedPrimaryPanel
+                  currentView={currentView}
+                  activePanel={activePanel}
+                  selectedFields={currentView === 'analysis' ? analysisActiveFields : selectedFields}
+                  onFieldChange={currentView === 'analysis' ? handleAnalysisFieldChange : handleDbFieldChange}
+                  onAIAction={handleAIAction}
+                  fieldGroups={dynamicFieldGroups}
+                  executeQuery={executeQuery}
+                  availableFields={availableFields}
+                  dispatch={dispatch}
+                  isDemoMode={isDemoMode}
+                  fieldAliases={state.fieldAliases}
+                  isGuest={isGuest}
+                  modelConfiguration={state.modelConfiguration}
+                  confirmedModelConfiguration={state.confirmedModelConfiguration}
+                  joins={state.joins}
+                  state={state}
+                />
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
+        );
+      })()}
+
       {isCredsModalOpen && <DbCredentialsModal
         onClose={() => setIsCredsModalOpen(false)}
         onSave={handleSaveCredentialsAndConnect}
+        onTest={handleTestConnection}
         initialCreds={athenaCredentials}
         initialDbType={databaseType}
       />}
-      {previewData && (
+
+      {previewData && currentView !== 'modeling' && (
         <TablePreviewModal
           tableName={previewData.name}
           data={previewData.data}
