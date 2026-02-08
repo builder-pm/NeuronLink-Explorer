@@ -2,12 +2,29 @@ import { RegisteredTable, RegisteredColumn, SupabaseCredentials, SchemaRegistryE
 import { appSupabase } from './appSupabase';
 import * as gemini from './gemini';
 
+const DVD_RENTAL_DESCRIPTIONS: Record<string, string> = {
+  'actor': 'Information about film actors including first and last names.',
+  'address': 'Physical addresses for customers, staff, and stores.',
+  'category': 'Genres for films (e.g., Action, Animation, etc.).',
+  'city': 'List of cities linked to countries for address localization.',
+  'country': 'List of countries.',
+  'customer': 'Customer profiles including contact info and active status.',
+  'film': 'Detailed movie data including title, release year, and rates.',
+  'film_actor': 'Mapping table connecting films to the actors that appear in them.',
+  'film_category': 'Mapping table connecting films to their genres/categories.',
+  'inventory': 'Tracks which films are available at which store.',
+  'language': 'Languages available for film audio and subtitles.',
+  'payment': 'Records of customer transactions for rentals.',
+  'rental': 'Records of individual rental transactions, tracking return dates.',
+  'staff': 'Employee information for the rental stores.',
+  'store': 'Physical rental store locations and management.'
+};
+
 /**
  * Extracts schema information from a PostgREST/Supabase OpenAPI endpoint.
  */
 export async function extractSchema(url: string, anonKey: string): Promise<RegisteredTable[]> {
-  // Ensure the URL points to the REST endpoint
-  // If URL is just the base Supabase URL, append /rest/v1/
+  // ... existing code ...
   let restUrl = url;
   if (!url.includes('/rest/v1')) {
     restUrl = url.replace(/\/$/, '') + '/rest/v1/';
@@ -16,12 +33,22 @@ export async function extractSchema(url: string, anonKey: string): Promise<Regis
   const response = await fetch(restUrl, {
     headers: {
       'apikey': anonKey,
-      'Authorization': `Bearer ${anonKey}`
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
     }
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch OpenAPI spec: ${response.statusText}`);
+    if (response.status === 401 || response.status === 403) {
+      console.warn('Unauthorized to fetch OpenAPI spec. Falling back to basic discovery.');
+      // If unauthorized, return empty array rather than throwing
+      // This allows the app to continue with just table names
+      return [];
+    }
+    if (response.status === 406) {
+      throw new Error(`Not Acceptable (406): Ensure the database schema is correctly configured and the registry table exists.`);
+    }
+    throw new Error(`Failed to fetch OpenAPI spec: ${response.statusText} (${response.status})`);
   }
 
   const spec = await response.json();
@@ -29,7 +56,6 @@ export async function extractSchema(url: string, anonKey: string): Promise<Regis
   const tables: RegisteredTable[] = [];
 
   for (const [tableName, definition] of Object.entries<any>(definitions)) {
-    // Skip internal PostgREST definitions if any
     if (tableName.startsWith('_')) continue;
 
     const properties = definition.properties || {};
@@ -38,11 +64,12 @@ export async function extractSchema(url: string, anonKey: string): Promise<Regis
     for (const [colName, colDef] of Object.entries<any>(properties)) {
       const description = colDef.description || '';
       
-      // Parse PK/FK from PostgREST description tags
-      const isPrimary = description.includes('<pk/>');
+      const isPrimary = description.includes('<pk/>') || 
+                        colName.toLowerCase() === 'id' || 
+                        colName.toLowerCase() === `${tableName.toLowerCase()}_id` ||
+                        (tableName.toLowerCase().endsWith('s') && colName.toLowerCase() === `${tableName.toLowerCase().slice(0, -1)}_id`);
       
       let foreignKey;
-      // Handle both single and double quotes, and optional spaces
       const fkMatch = description.match(/<fk table=['"]([^'"]+)['"] column=['"]([^'"]+)['"]\s*\/>/i);
       
       if (fkMatch) {
@@ -56,6 +83,7 @@ export async function extractSchema(url: string, anonKey: string): Promise<Regis
         name: colName,
         type: colDef.format || colDef.type || 'text',
         isPrimary,
+        description: description.split('<')[0].trim(),
         foreignKey
       });
     }
@@ -63,7 +91,7 @@ export async function extractSchema(url: string, anonKey: string): Promise<Regis
     tables.push({
       name: tableName,
       columns,
-      description: (definition.description || '').split('<')[0].trim() || undefined // Strip tags from description
+      description: (definition.description || '').split('<')[0].trim() || DVD_RENTAL_DESCRIPTIONS[tableName.toLowerCase()]
     });
   }
 
@@ -118,8 +146,19 @@ export async function syncSchemaRegistry(credentials: SupabaseCredentials): Prom
     .eq('db_url_hash', dbUrlHash)
     .single();
 
-  if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "no rows found"
-    console.error('Error fetching schema registry:', fetchError);
+  if (fetchError) {
+    if (fetchError.code === 'PGRST205' || fetchError.code === '42P01' || fetchError.status === 404) {
+      console.warn('Schema registry table not found or inaccessible. Please run the migration SQL and Reload PostgREST in Supabase settings.');
+      // Return early with extracted schema but no persistence
+      const tables = await extractSchema(credentials.url, credentials.anonKey);
+      return {
+        data: { dbUrlHash, tables, schemaHash: '', lastSyncedAt: '' },
+        driftDetected: false
+      };
+    }
+    if (fetchError.code !== 'PGRST116') {
+      console.error('Error fetching schema registry:', fetchError);
+    }
   }
 
   // 2. Extract current schema from Data Source

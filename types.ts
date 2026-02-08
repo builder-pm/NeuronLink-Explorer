@@ -291,23 +291,43 @@ export interface ModelConfigurationV2 {
 
     
 
-    export interface RegisteredColumn {
+        export interface RegisteredColumn {
 
-        name: string;
+    
 
-        type: string;
+            name: string;
 
-        isPrimary: boolean;
+    
 
-        foreignKey?: {
+            type: string;
 
-            table: string;
+    
 
-            column: string;
+            isPrimary: boolean;
 
-        };
+    
 
-    }
+            description?: string;
+
+    
+
+            foreignKey?: {
+
+    
+
+                table: string;
+
+    
+
+                column: string;
+
+    
+
+            };
+
+    
+
+        }
 
     
 

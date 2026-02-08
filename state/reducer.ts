@@ -294,7 +294,12 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 allFieldsForTable.forEach(field => {
                     const fieldKey = `${tableName}.${field}`;
                     if (!newFieldMetadata[fieldKey]) {
+                        // Check registry for existing description
+                        const registryTable = state.schemaRegistry?.tables.find(t => t.name === tableName);
+                        const registryCol = registryTable?.columns.find(c => c.name === field);
+                        
                         newFieldMetadata[fieldKey] = {
+                            description: registryCol?.description || '',
                             dataType: inferDataType(field)
                         };
                     }
@@ -306,7 +311,12 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 fields.forEach(field => {
                     const fieldKey = `${tableName}.${field}`;
                     if (!newFieldMetadata[fieldKey]) {
+                        // Check registry for existing description
+                        const registryTable = state.schemaRegistry?.tables.find(t => t.name === tableName);
+                        const registryCol = registryTable?.columns.find(c => c.name === field);
+
                         newFieldMetadata[fieldKey] = {
+                            description: registryCol?.description || '',
                             dataType: inferDataType(field)
                         };
                     }
@@ -361,12 +371,33 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         }
 
 
-        case ActionType.SET_SCHEMA_REGISTRY_DATA:
+        case ActionType.SET_SCHEMA_REGISTRY_DATA: {
+            const { data } = action.payload;
+            const newFieldMetadata = { ...state.fieldMetadata };
+
+            // Propagate descriptions from registry to fieldMetadata
+            if (data && data.tables) {
+                data.tables.forEach(table => {
+                    table.columns.forEach(col => {
+                        const fieldKey = `${table.name}.${col.name}`;
+                        if (col.description && !newFieldMetadata[fieldKey]?.description) {
+                            newFieldMetadata[fieldKey] = {
+                                ...(newFieldMetadata[fieldKey] || {}),
+                                description: col.description,
+                                dataType: newFieldMetadata[fieldKey]?.dataType || inferDataType(col.name)
+                            };
+                        }
+                    });
+                });
+            }
+
             return {
                 ...state,
                 schemaRegistry: action.payload.data,
+                fieldMetadata: newFieldMetadata,
                 isDriftDetected: action.payload.driftDetected
             };
+        }
 
         case ActionType.SET_USER:
             return { ...state, currentUser: action.payload };
