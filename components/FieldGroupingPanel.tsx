@@ -13,7 +13,8 @@ import {
     FolderIcon,
     CalendarIcon,
     KeyIcon,
-    SettingsIcon
+    SettingsIcon,
+    EditIcon
 } from './icons';
 import { FieldGroups, ItemTypes, FieldAliases, FieldMetadata, SemanticDataType } from '../types';
 
@@ -143,18 +144,26 @@ const DraggableField: React.FC<DraggableFieldProps> = ({
                         />
                     ) : (
                         <span
-                            onClick={() => {
-                                setEditValue(displayName);
-                                setIsEditing(true);
-                            }}
-                            className={`truncate block cursor-pointer hover:text-primary transition-colors hover:underline ${isHidden ? 'line-through text-muted-foreground opacity-60' : 'text-foreground'}`}
-                            title="Click to rename"
+                            className={`truncate block ${isHidden ? 'line-through text-muted-foreground opacity-60' : 'text-foreground'}`}
                         >
                             {displayName}
                         </span>
                     )}
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover/field:opacity-100 transition-opacity">
+                    {!isEditing && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setEditValue(displayName);
+                                setIsEditing(true);
+                            }}
+                            className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                            title="Rename field"
+                        >
+                            <EditIcon className="h-3.5 w-3.5" />
+                        </button>
+                    )}
                     <button
                         onClick={(e) => {
                             e.stopPropagation();

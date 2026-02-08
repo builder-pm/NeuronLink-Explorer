@@ -106,6 +106,23 @@ export const discoverTables = async (): Promise<{ name: string; fields: string[]
 };
 
 /**
+ * Fetches up to 50 distinct non-null sample values for a specific field.
+ */
+export const fetchSampleValues = async (tableName: string, fieldName: string): Promise<string[]> => {
+    if (!db) throw new Error("Database not initialized.");
+
+    const query = `SELECT DISTINCT "${fieldName}" FROM "${tableName}" WHERE "${fieldName}" IS NOT NULL LIMIT 50;`;
+    
+    try {
+        const results = await executeQuery(query);
+        return results.map(row => String(row[fieldName]));
+    } catch (e) {
+        console.error(`Failed to fetch sample values for ${tableName}.${fieldName}:`, e);
+        throw e;
+    }
+};
+
+/**
  * Fetches top 50 distinct non-null sample values for a field.
  * Works with SQLite (local) database.
  */

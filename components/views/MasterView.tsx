@@ -6,9 +6,11 @@ import StructurePanel from '../master/StructurePanel';
 import FieldGroupingPanel from '../FieldGroupingPanel';
 import GlobalFiltersPanel from '../master/GlobalFiltersPanel';
 import ContextPanel from '../master/ContextPanel';
+import ConfigManagerModal from '../ConfigManagerModal';
+import SaveConfigModal from '../SaveConfigModal';
 import { AppState, DataRow, DatabaseType } from '../../types';
 import { AppAction, ActionType } from '../../state/actions';
-import { SettingsIcon, EyeIcon, RotateCcwIcon, XIcon, SqlIcon } from '../icons';
+import { SettingsIcon, EyeIcon, RotateCcwIcon, XIcon, SqlIcon, DatabaseIcon, TableIcon, FolderIcon, PlusIcon } from '../icons';
 import toast from 'react-hot-toast';
 import { X, Search } from 'lucide-react';
 import * as db from '../../services/database';
@@ -30,12 +32,14 @@ interface CentralAreaProps {
     onConfigureCredentialsClick: () => void;
     isModelDirty: boolean;
     onConfirmModel: () => void;
+    onLoadClick: () => void;
+    onSaveClick: () => void;
 }
 
 const CentralArea: React.FC<CentralAreaProps> = ({
     children, sqlEditor, showSql, contextPreview, showContext,
     onToggleSql, onToggleContext, isConnecting, isConnected, dbType, onRefreshData, onConfigureCredentialsClick,
-    isModelDirty, onConfirmModel // Destructure
+    isModelDirty, onConfirmModel, onLoadClick, onSaveClick // Destructure
 }) => {
     return (
         <div className="flex-1 relative flex flex-col h-full overflow-hidden bg-background min-w-0">
@@ -43,6 +47,26 @@ const CentralArea: React.FC<CentralAreaProps> = ({
             <div className="h-14 border-b border-border flex items-center justify-between px-4 bg-card shrink-0 z-20 relative">
                 <div className="flex items-center space-x-4">
                     <h2 className="text-xl font-bold text-foreground uppercase tracking-wide font-mono">Data Model</h2>
+                    
+                    <div className="flex items-center gap-2 border-l border-border pl-4">
+                        <button
+                            onClick={onLoadClick}
+                            className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary hover:bg-muted transition-all border border-transparent hover:border-border rounded"
+                            title="Load Configuration"
+                        >
+                            <FolderIcon className="h-3.5 w-3.5" />
+                            <span>Load</span>
+                        </button>
+                        <button
+                            onClick={onSaveClick}
+                            className="flex items-center gap-2 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary hover:bg-muted transition-all border border-transparent hover:border-border rounded"
+                            title="Save Configuration"
+                        >
+                            <PlusIcon className="h-3.5 w-3.5" />
+                            <span>Save</span>
+                        </button>
+                    </div>
+
                     {isModelDirty && (
                         <button
                             onClick={onConfirmModel}
@@ -88,7 +112,7 @@ const CentralArea: React.FC<CentralAreaProps> = ({
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-all border ${showContext ? 'bg-primary text-black border-primary' : 'text-muted-foreground border-transparent hover:bg-muted hover:text-foreground'}`}
                         title="Semantic Context"
                     >
-                        <SettingsIcon className="h-4 w-4" />
+                        <DatabaseIcon className="h-4 w-4" />
                         <span className="text-xs font-bold">CONTEXT</span>
                     </button>
                 </div>
@@ -275,7 +299,7 @@ const FixedRightPanel = ({ state, dispatch, onPreviewTable, previewData, onClear
                     onClick={() => setActiveTab('structure')}
                     className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest flex flex-col items-center gap-1 ${activeTab === 'structure' ? 'bg-muted/50 text-primary border-b-2 border-primary' : 'text-muted-foreground hover:bg-muted/20'}`}
                 >
-                    <SettingsIcon className="h-4 w-4" />
+                    <TableIcon className="h-4 w-4" />
                     <span>Structure</span>
                 </button>
                 <button
@@ -420,6 +444,10 @@ export const MasterView: React.FC<MasterViewProps> = ({
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
 
+    // Modal States
+    const [isConfigManagerOpen, setIsConfigManagerOpen] = useState(false);
+    const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+
     // Row Viewer State
     const [isRowViewerActive, setIsRowViewerActive] = useState(false);
     const [selectedRow, setSelectedRow] = useState<DataRow | null>(null);
@@ -451,6 +479,14 @@ export const MasterView: React.FC<MasterViewProps> = ({
         setIsRowViewerActive(false);
         setSelectedRow(null);
         setSelectedRowColumns([]);
+    };
+
+    const handleRemoveTable = (tableName: string) => {
+        dispatch({
+            type: ActionType.UPDATE_MODEL_CONFIG,
+            payload: { tableName, isSelected: false }
+        });
+        toast.success(`Removed ${tableName} from model`);
     };
 
     // Auto-close row viewer when SQL panel closes
@@ -508,6 +544,8 @@ export const MasterView: React.FC<MasterViewProps> = ({
                     toast.success("Model Confirmed (Mock)");
                     dispatch({ type: ActionType.CONFIRM_MODEL });
                 }}
+                onLoadClick={() => setIsConfigManagerOpen(true)}
+                onSaveClick={() => setIsSaveModalOpen(true)}
             >
                 {/* Visual Graph Component */}
                 <DataModelCanvas
@@ -520,6 +558,7 @@ export const MasterView: React.FC<MasterViewProps> = ({
                     }}
                     tables={tablesForCanvas}
                     onPreviewTable={onPreviewTable}
+                    onRemoveTable={handleRemoveTable}
                     fieldAliases={state.fieldAliases}
                     isModelDirty={state.isModelDirty}
                     onConfirmModel={() => dispatch({ type: ActionType.CONFIRM_MODEL })}
@@ -534,20 +573,8 @@ export const MasterView: React.FC<MasterViewProps> = ({
                 dispatch={dispatch}
             />
 
-            {/* 3. Fixed Right Panel (Tables/Preview) with Attached Builder Toggle */}
+            {/* 3. Fixed Right Panel (Tables/Preview) */}
             <div className="relative flex h-full z-30">
-                {/* The "Builder" Toggle Strip (Attached to left of panel) */}
-                <div className="w-10 bg-card border-l border-border flex flex-col items-center py-4 gap-4 z-40 shadow-xl h-full border-r border-border mt-14">
-                    <button
-                        onClick={() => setIsDrawerOpen(!isDrawerOpen)}
-                        className={`p-2 rounded-md transition-all ${isDrawerOpen ? 'bg-primary text-black' : 'text-muted-foreground hover:text-primary'}`}
-                        title="Toggle Builder"
-                    >
-                        <SettingsIcon className="h-5 w-5" />
-                    </button>
-                    <div className="h-px w-6 bg-border" />
-                </div>
-
                 {/* The Main Fixed Right Panel */}
                 <FixedRightPanel
                     state={state}
@@ -561,6 +588,38 @@ export const MasterView: React.FC<MasterViewProps> = ({
                     onCloseRowViewer={handleCloseRowViewer}
                 />
             </div>
+
+            {/* Modals */}
+            <ConfigManagerModal
+                isOpen={isConfigManagerOpen}
+                onClose={() => setIsConfigManagerOpen(false)}
+                type="db_config"
+                onLoad={(config, name) => {
+                    dispatch({ type: ActionType.LOAD_CONFIG, payload: config });
+                    dispatch({ type: ActionType.SET_CONFIG_NAME, payload: name });
+                    setIsConfigManagerOpen(false);
+                }}
+                userId={state.currentUser?.id}
+            />
+
+            <SaveConfigModal
+                isOpen={isSaveModalOpen}
+                onClose={() => setIsSaveModalOpen(false)}
+                type="db_config"
+                configData={{
+                    selectedFields: state.selectedFields,
+                    modelConfiguration: state.modelConfiguration,
+                    confirmedModelConfiguration: state.confirmedModelConfiguration,
+                    joins: state.joins,
+                    tablePositions: state.tablePositions,
+                    fieldGroups: state.fieldGroups,
+                    fieldAliases: state.fieldAliases
+                }}
+                onSaveSuccess={(name) => {
+                    dispatch({ type: ActionType.SET_CONFIG_NAME, payload: name });
+                    setIsSaveModalOpen(false);
+                }}
+            />
 
         </div>
     );
