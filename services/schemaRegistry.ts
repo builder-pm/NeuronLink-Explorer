@@ -1,4 +1,6 @@
-import { RegisteredTable, RegisteredColumn } from '../types';
+import { RegisteredTable, RegisteredColumn, SupabaseCredentials, SchemaRegistryEntry } from '../types';
+import { appSupabase } from './appSupabase';
+import * as gemini from './gemini';
 
 /**
  * Extracts schema information from a PostgREST/Supabase OpenAPI endpoint.
@@ -97,4 +99,85 @@ export function hashSchema(tables: RegisteredTable[]): string {
     hash |= 0;
   }
   return hash.toString(16);
+}
+
+/**
+ * Syncs the schema registry for a database connection.
+ * Detects drift, generates missing descriptions via AI, and persists metadata.
+ */
+export async function syncSchemaRegistry(credentials: SupabaseCredentials): Promise<{ 
+  data: SchemaRegistryEntry; 
+  driftDetected: boolean;
+}> {
+  const dbUrlHash = await hashDbUrl(credentials.url);
+  
+  // 1. Fetch current registry from App Database
+  const { data: existingEntry, error: fetchError } = await appSupabase
+    .from('schema_registry')
+    .select('*')
+    .eq('db_url_hash', dbUrlHash)
+    .single();
+
+  if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "no rows found"
+    console.error('Error fetching schema registry:', fetchError);
+  }
+
+  // 2. Extract current schema from Data Source
+  const currentTables = await extractSchema(credentials.url, credentials.anonKey);
+  const currentSchemaHash = hashSchema(currentTables);
+
+  let finalTables = currentTables;
+  let driftDetected = false;
+
+  if (existingEntry) {
+    const previousSchemaHash = existingEntry.schema_hash;
+    driftDetected = previousSchemaHash !== currentSchemaHash;
+
+    // Merge logic: Preserve existing descriptions from DB
+    const existingTables: RegisteredTable[] = existingEntry.tables_data;
+    const descriptionMap = new Map<string, string>();
+    existingTables.forEach(t => {
+      if (t.description) descriptionMap.set(t.name, t.description);
+    });
+
+    finalTables = currentTables.map(t => ({
+      ...t,
+      description: t.description || descriptionMap.get(t.name)
+    }));
+  } else {
+    // New registry: Generate AI descriptions
+    const tableNames = currentTables.map(t => t.name);
+    const aiDescriptions = await gemini.generateTableDescriptions(tableNames);
+    
+    finalTables = currentTables.map(t => ({
+      ...t,
+      description: t.description || aiDescriptions[t.name]
+    }));
+  }
+
+  // 3. Persist to App Database
+  const registryEntry: SchemaRegistryEntry = {
+    dbUrlHash,
+    tables: finalTables,
+    schemaHash: currentSchemaHash,
+    lastSyncedAt: new Date().toISOString()
+  };
+
+  const { error: upsertError } = await appSupabase
+    .from('schema_registry')
+    .upsert({
+      db_url_hash: dbUrlHash,
+      tables_data: finalTables,
+      schema_hash: currentSchemaHash,
+      last_synced_at: registryEntry.lastSyncedAt
+    });
+
+  if (upsertError) {
+    console.error('Error upserting schema registry:', upsertError);
+  }
+
+  return {
+    data: registryEntry,
+    driftDetected
+  };
 }
