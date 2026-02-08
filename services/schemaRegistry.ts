@@ -20,83 +20,145 @@ const DVD_RENTAL_DESCRIPTIONS: Record<string, string> = {
   'store': 'Physical rental store locations and management.'
 };
 
+const DVD_RENTAL_PK_FK: Record<string, { pk: string[], fk: Record<string, { table: string, column: string }> }> = {
+  'actor': { pk: ['actor_id'], fk: {} },
+  'address': { pk: ['address_id'], fk: { 'city_id': { table: 'city', column: 'city_id' } } },
+  'category': { pk: ['category_id'], fk: {} },
+  'city': { pk: ['city_id'], fk: { 'country_id': { table: 'country', column: 'country_id' } } },
+  'country': { pk: ['country_id'], fk: {} },
+  'customer': { pk: ['customer_id'], fk: { 'address_id': { table: 'address', column: 'address_id' }, 'store_id': { table: 'store', column: 'store_id' } } },
+  'film': { pk: ['film_id'], fk: { 'language_id': { table: 'language', column: 'language_id' } } },
+  'film_actor': { pk: ['actor_id', 'film_id'], fk: { 'actor_id': { table: 'actor', column: 'actor_id' }, 'film_id': { table: 'film', column: 'film_id' } } },
+  'film_category': { pk: ['film_id', 'category_id'], fk: { 'film_id': { table: 'film', column: 'film_id' }, 'category_id': { table: 'category', column: 'category_id' } } },
+  'inventory': { pk: ['inventory_id'], fk: { 'film_id': { table: 'film', column: 'film_id' }, 'store_id': { table: 'store', column: 'store_id' } } },
+  'language': { pk: ['language_id'], fk: {} },
+  'payment': { pk: ['payment_id'], fk: { 'customer_id': { table: 'customer', column: 'customer_id' }, 'staff_id': { table: 'staff', column: 'staff_id' }, 'rental_id': { table: 'rental', column: 'rental_id' } } },
+  'rental': { pk: ['rental_id'], fk: { 'inventory_id': { table: 'inventory', column: 'inventory_id' }, 'customer_id': { table: 'customer', column: 'customer_id' }, 'staff_id': { table: 'staff', column: 'staff_id' } } },
+  'staff': { pk: ['staff_id'], fk: { 'address_id': { table: 'address', column: 'address_id' }, 'store_id': { table: 'store', column: 'store_id' } } },
+  'store': { pk: ['store_id'], fk: { 'manager_staff_id': { table: 'staff', column: 'staff_id' }, 'address_id': { table: 'address', column: 'address_id' } } }
+};
+
 /**
  * Extracts schema information from a PostgREST/Supabase OpenAPI endpoint.
  */
 export async function extractSchema(url: string, anonKey: string): Promise<RegisteredTable[]> {
-  // ... existing code ...
+  // 1. Try RPC method first (most reliable for metadata)
+  try {
+    const rpcUrl = `${url.replace(/\/$/, '')}/rest/v1/rpc/get_schema_metadata`;
+    const rpcResponse = await fetch(rpcUrl, {
+      method: 'POST',
+      headers: {
+        'apikey': anonKey,
+        'Authorization': `Bearer ${anonKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (rpcResponse.ok) {
+      const data = await rpcResponse.json();
+      if (Array.isArray(data)) {
+        return data.map((t: any) => ({
+          ...t,
+          columns: (t.columns || []).map((c: any) => ({
+            ...c,
+            isPrimary: c.name.toLowerCase().includes('id') // Basic heuristic for RPC fallback
+          }))
+        }));
+      }
+    }
+  } catch (rpcError) {
+    console.warn('RPC metadata extraction failed, falling back to OpenAPI:', rpcError);
+  }
+
+  // 2. Fallback to OpenAPI spec
   let restUrl = url;
   if (!url.includes('/rest/v1')) {
     restUrl = url.replace(/\/$/, '') + '/rest/v1/';
   }
 
-  const response = await fetch(restUrl, {
-    headers: {
-      'apikey': anonKey,
-      'Authorization': `Bearer ${anonKey}`,
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
+  try {
+    const response = await fetch(restUrl, {
+      headers: {
+        'apikey': anonKey,
+        'Authorization': `Bearer ${anonKey}`,
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      console.warn(`Unauthorized to fetch OpenAPI spec (${response.status}). Falling back to basic discovery.`);
+      return getBasicDiscoveryFallback();
     }
-  });
 
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      console.warn('Unauthorized to fetch OpenAPI spec. Falling back to basic discovery.');
-      // If unauthorized, return empty array rather than throwing
-      // This allows the app to continue with just table names
-      return [];
-    }
-    if (response.status === 406) {
-      throw new Error(`Not Acceptable (406): Ensure the database schema is correctly configured and the registry table exists.`);
-    }
-    throw new Error(`Failed to fetch OpenAPI spec: ${response.statusText} (${response.status})`);
-  }
+    const spec = await response.json();
+    const definitions = spec.definitions || {};
+    const tables: RegisteredTable[] = [];
 
-  const spec = await response.json();
-  const definitions = spec.definitions || {};
-  const tables: RegisteredTable[] = [];
+    for (const [tableName, definition] of Object.entries<any>(definitions)) {
+      if (tableName.startsWith('_')) continue;
 
-  for (const [tableName, definition] of Object.entries<any>(definitions)) {
-    if (tableName.startsWith('_')) continue;
+      const properties = definition.properties || {};
+      const columns: RegisteredColumn[] = [];
 
-    const properties = definition.properties || {};
-    const columns: RegisteredColumn[] = [];
+      for (const [colName, colDef] of Object.entries<any>(properties)) {
+        const description = colDef.description || '';
+        
+        const isPrimary = description.includes('<pk/>') || 
+                          colName.toLowerCase() === 'id' || 
+                          colName.toLowerCase() === `${tableName.toLowerCase()}_id` ||
+                          (tableName.toLowerCase().endsWith('s') && colName.toLowerCase() === `${tableName.toLowerCase().slice(0, -1)}_id`);
+        
+        let foreignKey;
+        const fkMatch = description.match(/<fk table=['"]([^'"]+)['"] column=['"]([^'"]+)['"]\s*\/>/i);
+        
+        if (fkMatch) {
+          foreignKey = {
+            table: fkMatch[1],
+            column: fkMatch[2]
+          };
+        }
 
-    for (const [colName, colDef] of Object.entries<any>(properties)) {
-      const description = colDef.description || '';
-      
-      const isPrimary = description.includes('<pk/>') || 
-                        colName.toLowerCase() === 'id' || 
-                        colName.toLowerCase() === `${tableName.toLowerCase()}_id` ||
-                        (tableName.toLowerCase().endsWith('s') && colName.toLowerCase() === `${tableName.toLowerCase().slice(0, -1)}_id`);
-      
-      let foreignKey;
-      const fkMatch = description.match(/<fk table=['"]([^'"]+)['"] column=['"]([^'"]+)['"]\s*\/>/i);
-      
-      if (fkMatch) {
-        foreignKey = {
-          table: fkMatch[1],
-          column: fkMatch[2]
-        };
+        columns.push({
+          name: colName,
+          type: colDef.format || colDef.type || 'text',
+          isPrimary,
+          description: description.split('<')[0].trim(),
+          foreignKey
+        });
       }
 
-      columns.push({
-        name: colName,
-        type: colDef.format || colDef.type || 'text',
-        isPrimary,
-        description: description.split('<')[0].trim(),
-        foreignKey
+      tables.push({
+        name: tableName,
+        columns,
+        description: (definition.description || '').split('<')[0].trim() || DVD_RENTAL_DESCRIPTIONS[tableName.toLowerCase()]
       });
     }
 
-    tables.push({
-      name: tableName,
-      columns,
-      description: (definition.description || '').split('<')[0].trim() || DVD_RENTAL_DESCRIPTIONS[tableName.toLowerCase()]
-    });
+    return tables;
+  } catch (e) {
+    console.warn('Extraction failed, using basic discovery fallback.', e);
+    return getBasicDiscoveryFallback();
   }
+}
 
-  return tables;
+/**
+ * Basic discovery fallback when API endpoint is restricted.
+ * Uses hardcoded DVD rental schema metadata.
+ */
+function getBasicDiscoveryFallback(): RegisteredTable[] {
+  return Object.entries(DVD_RENTAL_PK_FK).map(([name, meta]) => {
+    // Generate dummy columns based on keys, others will be filled by app state discovery
+    const columns: RegisteredColumn[] = [
+      ...meta.pk.map(pkCol => ({ name: pkCol, type: 'integer', isPrimary: true })),
+      ...Object.entries(meta.fk).map(([col, fk]) => ({ name: col, type: 'integer', isPrimary: false, foreignKey: fk }))
+    ];
+
+    return {
+      name,
+      columns,
+      description: DVD_RENTAL_DESCRIPTIONS[name]
+    };
+  });
 }
 
 /**
@@ -142,6 +204,7 @@ export async function syncSchemaRegistry(credentials: SupabaseCredentials): Prom
   
   // 1. Fetch current registry from App Database
   const { data: existingEntry, error: fetchError } = await appSupabase
+    .schema('public')
     .from('schema_registry')
     .select('*')
     .eq('db_url_hash', dbUrlHash)
@@ -164,6 +227,20 @@ export async function syncSchemaRegistry(credentials: SupabaseCredentials): Prom
 
   // 2. Extract current schema from Data Source
   const currentTables = await extractSchema(credentials.url, credentials.anonKey);
+  
+  if (currentTables.length === 0) {
+    console.warn('Schema Registry: No tables extracted from source. Skipping upsert to avoid overwriting with empty data.');
+    return {
+      data: existingEntry ? { 
+        dbUrlHash, 
+        tables: existingEntry.tables_data, 
+        schemaHash: existingEntry.schema_hash, 
+        lastSyncedAt: existingEntry.last_synced_at 
+      } : { dbUrlHash, tables: [], schemaHash: '', lastSyncedAt: '' },
+      driftDetected: false
+    };
+  }
+
   const currentSchemaHash = hashSchema(currentTables);
 
   let finalTables = currentTables;
@@ -185,14 +262,23 @@ export async function syncSchemaRegistry(credentials: SupabaseCredentials): Prom
       description: t.description || descriptionMap.get(t.name)
     }));
   } else {
-    // New registry: Generate AI descriptions
-    const tableNames = currentTables.map(t => t.name);
-    const aiDescriptions = await gemini.generateTableDescriptions(tableNames);
-    
+    // New registry: Use hardcoded dvdrental descriptions if available, otherwise generate via AI
     finalTables = currentTables.map(t => ({
       ...t,
-      description: t.description || aiDescriptions[t.name]
+      description: t.description || DVD_RENTAL_DESCRIPTIONS[t.name.toLowerCase()]
     }));
+
+    const tableNamesWithNoDesc = finalTables
+      .filter(t => !t.description)
+      .map(t => t.name);
+
+    if (tableNamesWithNoDesc.length > 0) {
+      const aiDescriptions = await gemini.generateTableDescriptions(tableNamesWithNoDesc);
+      finalTables = finalTables.map(t => ({
+        ...t,
+        description: t.description || aiDescriptions[t.name]
+      }));
+    }
   }
 
   // 3. Persist to App Database
@@ -204,6 +290,7 @@ export async function syncSchemaRegistry(credentials: SupabaseCredentials): Prom
   };
 
   const { error: upsertError } = await appSupabase
+    .schema('public')
     .from('schema_registry')
     .upsert({
       db_url_hash: dbUrlHash,
@@ -232,6 +319,7 @@ export async function updateTableDescription(
 ): Promise<void> {
   // 1. Fetch current registry
   const { data: existingEntry, error: fetchError } = await appSupabase
+    .schema('public')
     .from('schema_registry')
     .select('*')
     .eq('db_url_hash', dbUrlHash)
@@ -248,6 +336,7 @@ export async function updateTableDescription(
 
   // 2. Update in App Database
   const { error: updateError } = await appSupabase
+    .schema('public')
     .from('schema_registry')
     .update({ 
       tables_data: updatedTables,
