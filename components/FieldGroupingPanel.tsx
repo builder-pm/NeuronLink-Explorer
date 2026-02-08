@@ -48,6 +48,7 @@ const DraggableField: React.FC<DraggableFieldProps> = ({
     fieldIndex,
     displayName,
     isHidden,
+    metadata,
     onRename,
     onToggleVisibility,
     onMetadataChange
