@@ -38,6 +38,9 @@ export const initialState: AppState = {
     tablePositions: {},
     fieldGroups: { "Uncategorized": [] },
     fieldAliases: {},
+    fieldMetadata: {},
+    sampleValues: {},
+    hiddenFields: new Set<string>(),
     discoveredTables: [],
 
     // New model state
@@ -53,6 +56,7 @@ export const initialState: AppState = {
     isLakehouseConnected: false,
     isConnectingToLakehouse: false,
     isDemoMode: false,
+    currentUser: null,
 };
 
 export const appReducer = (state: AppState, action: AppAction): AppState => {
@@ -81,6 +85,29 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             return { ...state, analysisActiveFields: action.payload };
         case ActionType.UPDATE_SQL_QUERY:
             return { ...state, sqlQuery: action.payload };
+        case ActionType.SET_FIELD_METADATA: {
+            const { fieldKey, metadata } = action.payload;
+            return {
+                ...state,
+                fieldMetadata: {
+                    ...state.fieldMetadata,
+                    [fieldKey]: {
+                        ...(state.fieldMetadata[fieldKey] || {}),
+                        ...metadata
+                    }
+                }
+            };
+        }
+        case ActionType.SET_SAMPLE_VALUES: {
+            const { fieldKey, values } = action.payload;
+            return {
+                ...state,
+                sampleValues: {
+                    ...state.sampleValues,
+                    [fieldKey]: values
+                }
+            };
+        }
         case ActionType.SET_CURRENT_PAGE:
             return { ...state, currentPage: action.payload };
         case ActionType.SET_ROWS_PER_PAGE:
@@ -122,6 +149,9 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 tablePositions: config.tablePositions || state.tablePositions,
                 fieldGroups: config.fieldGroups || state.fieldGroups,
                 fieldAliases: config.fieldAliases || state.fieldAliases,
+                fieldMetadata: config.fieldMetadata || state.fieldMetadata,
+                sampleValues: config.sampleValues || state.sampleValues,
+                hiddenFields: config.hiddenFields ? new Set(config.hiddenFields) : state.hiddenFields,
                 configName: config.configName || state.configName,
                 fileName: config.fileName || state.fileName,
                 sqlQuery: config.sqlQuery || state.sqlQuery,
@@ -132,6 +162,16 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 athenaCredentials: config.athenaCredentials || state.athenaCredentials,
                 supabaseCredentials: config.supabaseCredentials || state.supabaseCredentials,
                 isDemoMode: config.isDemoMode !== undefined ? config.isDemoMode : state.isDemoMode,
+            };
+        case ActionType.LOAD_ANALYSIS_CONFIG:
+            const analysisConfig = action.payload;
+            return {
+                ...state,
+                pivotConfig: analysisConfig.pivotConfig || state.pivotConfig,
+                filters: analysisConfig.filters || state.filters,
+                // We might want to switch view to analysis if loading this config
+                currentView: 'analysis',
+                activePanel: 'fields',
             };
         case ActionType.UPDATE_PIVOT: {
             const { field, targetZone } = action.payload;
@@ -256,6 +296,12 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 isModelDirty: true
             };
         }
+        case ActionType.SET_MODEL_CONFIGURATION:
+            return {
+                ...state,
+                modelConfiguration: action.payload,
+                isModelDirty: true
+            };
         case ActionType.CONFIRM_MODEL: {
             return {
                 ...state,
@@ -277,6 +323,21 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 isModelDirty: true
             };
         }
+
+        case ActionType.SET_FIELD_VISIBILITY: {
+            const { fieldKey, isHidden } = action.payload;
+            const newHiddenFields = new Set(state.hiddenFields);
+            if (isHidden) {
+                newHiddenFields.add(fieldKey);
+            } else {
+                newHiddenFields.delete(fieldKey);
+            }
+            return { ...state, hiddenFields: newHiddenFields, isModelDirty: true };
+        }
+
+
+        case ActionType.SET_USER:
+            return { ...state, currentUser: action.payload };
 
         default:
             return state;

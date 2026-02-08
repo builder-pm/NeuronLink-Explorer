@@ -10,7 +10,9 @@
     AthenaCredentials,
     SupabaseCredentials,
     ModelConfiguration,
-    ModelingSecondaryPanelTab
+    ModelingSecondaryPanelTab,
+    User,
+    FieldMetadata
 } from '../types';
 
 export enum ActionType {
@@ -23,6 +25,7 @@ export enum ActionType {
     SET_CONFIG_NAME = 'SET_CONFIG_NAME',
     SET_FILE_NAME = 'SET_FILE_NAME',
     LOAD_CONFIG = 'LOAD_CONFIG',
+    LOAD_ANALYSIS_CONFIG = 'LOAD_ANALYSIS_CONFIG',
     RESET_STATE = 'RESET_STATE',
 
     // Data
@@ -30,6 +33,8 @@ export enum ActionType {
     SET_SELECTED_FIELDS = 'SET_SELECTED_FIELDS',
     SET_ANALYSIS_ACTIVE_FIELDS = 'SET_ANALYSIS_ACTIVE_FIELDS',
     UPDATE_SQL_QUERY = 'UPDATE_SQL_QUERY',
+    SET_FIELD_METADATA = 'SET_FIELD_METADATA',
+    SET_SAMPLE_VALUES = 'SET_SAMPLE_VALUES',
 
     // Pagination
     SET_CURRENT_PAGE = 'SET_CURRENT_page',
@@ -52,6 +57,7 @@ export enum ActionType {
     SET_DISCOVERED_TABLES = 'SET_DISCOVERED_TABLES',
     UPDATE_MODEL_CONFIG = 'UPDATE_MODEL_CONFIG',
     CONFIRM_MODEL = 'CONFIRM_MODEL',
+    SET_MODEL_CONFIGURATION = 'SET_MODEL_CONFIGURATION',
     SET_MODELING_SECONDARY_PANEL_TAB = 'SET_MODELING_SECONDARY_PANEL_TAB',
 
 
@@ -63,6 +69,10 @@ export enum ActionType {
     SET_SUPABASE_CREDENTIALS = 'SET_SUPABASE_CREDENTIALS',
     TOGGLE_DEMO_MODE = 'TOGGLE_DEMO_MODE',
     SET_FIELD_ALIAS = 'SET_FIELD_ALIAS',
+    SET_FIELD_VISIBILITY = 'SET_FIELD_VISIBILITY',
+
+    // User
+    SET_USER = 'SET_USER',
 }
 
 
@@ -79,6 +89,8 @@ export type AppAction =
     | { type: ActionType.SET_SELECTED_FIELDS; payload: string[] }
     | { type: ActionType.SET_ANALYSIS_ACTIVE_FIELDS; payload: string[] }
     | { type: ActionType.UPDATE_SQL_QUERY; payload: string }
+    | { type: ActionType.SET_FIELD_METADATA; payload: { fieldKey: string; metadata: FieldMetadata } }
+    | { type: ActionType.SET_SAMPLE_VALUES; payload: { fieldKey: string; values: string[] } }
     | { type: ActionType.SET_CURRENT_PAGE; payload: number }
     | { type: ActionType.SET_ROWS_PER_PAGE; payload: number }
     | { type: ActionType.SET_PIVOT_CONFIG; payload: PivotConfig }
@@ -91,6 +103,7 @@ export type AppAction =
     | { type: ActionType.SET_FIELD_GROUPS; payload: FieldGroups }
     | { type: ActionType.SET_DISCOVERED_TABLES; payload: { name: string; fields: string[] }[] }
     | { type: ActionType.LOAD_CONFIG; payload: any }
+    | { type: ActionType.LOAD_ANALYSIS_CONFIG; payload: any }
     | { type: ActionType.RESET_STATE; }
     | { type: ActionType.UPDATE_PIVOT; payload: { field: string; targetZone: 'rows' | 'columns' | 'values' } }
     | { type: ActionType.REMOVE_PIVOT_ITEM; payload: { item: string | number; zone: 'rows' | 'columns' | 'values' } }
@@ -103,6 +116,9 @@ export type AppAction =
     | { type: ActionType.TOGGLE_DEMO_MODE }
     // New modeling actions
     | { type: ActionType.UPDATE_MODEL_CONFIG; payload: { tableName: string; fields?: string[]; isSelected?: boolean } }
+    | { type: ActionType.SET_MODEL_CONFIGURATION; payload: ModelConfiguration }
     | { type: ActionType.CONFIRM_MODEL; }
     | { type: ActionType.SET_MODELING_SECONDARY_PANEL_TAB; payload: ModelingSecondaryPanelTab }
-    | { type: ActionType.SET_FIELD_ALIAS; payload: { fieldKey: string; alias: string } };
+    | { type: ActionType.SET_FIELD_ALIAS; payload: { fieldKey: string; alias: string } }
+    | { type: ActionType.SET_FIELD_VISIBILITY; payload: { fieldKey: string; isHidden: boolean } }
+    | { type: ActionType.SET_USER; payload: User | null };
