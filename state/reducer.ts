@@ -56,6 +56,8 @@ export const initialState: AppState = {
     isLakehouseConnected: false,
     isConnectingToLakehouse: false,
     isDemoMode: false,
+    schemaRegistry: null,
+    isDriftDetected: false,
     currentUser: null,
 };
 
@@ -335,6 +337,13 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             return { ...state, hiddenFields: newHiddenFields, isModelDirty: true };
         }
 
+
+        case ActionType.SET_SCHEMA_REGISTRY_DATA:
+            return {
+                ...state,
+                schemaRegistry: action.payload.data,
+                isDriftDetected: action.payload.driftDetected
+            };
 
         case ActionType.SET_USER:
             return { ...state, currentUser: action.payload };

@@ -12,7 +12,8 @@
     ModelConfiguration,
     ModelingSecondaryPanelTab,
     User,
-    FieldMetadata
+    FieldMetadata,
+    SchemaRegistryEntry
 } from '../types';
 
 export enum ActionType {
@@ -71,6 +72,9 @@ export enum ActionType {
     SET_FIELD_ALIAS = 'SET_FIELD_ALIAS',
     SET_FIELD_VISIBILITY = 'SET_FIELD_VISIBILITY',
 
+    // Schema Registry
+    SET_SCHEMA_REGISTRY_DATA = 'SET_SCHEMA_REGISTRY_DATA',
+
     // User
     SET_USER = 'SET_USER',
 }
@@ -121,4 +125,5 @@ export type AppAction =
     | { type: ActionType.SET_MODELING_SECONDARY_PANEL_TAB; payload: ModelingSecondaryPanelTab }
     | { type: ActionType.SET_FIELD_ALIAS; payload: { fieldKey: string; alias: string } }
     | { type: ActionType.SET_FIELD_VISIBILITY; payload: { fieldKey: string; isHidden: boolean } }
+    | { type: ActionType.SET_SCHEMA_REGISTRY_DATA; payload: { data: SchemaRegistryEntry; driftDetected: boolean } }
     | { type: ActionType.SET_USER; payload: User | null };

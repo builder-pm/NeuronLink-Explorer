@@ -171,6 +171,10 @@ export interface AppState {
     isConnectingToLakehouse: boolean;
     isDemoMode: boolean;
 
+    // Schema Registry
+    schemaRegistry: SchemaRegistryEntry | null;
+    isDriftDetected: boolean;
+
     // User/Auth
     currentUser: User | null;
 }
