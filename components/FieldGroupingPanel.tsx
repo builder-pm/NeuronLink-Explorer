@@ -111,6 +111,20 @@ const DraggableField: React.FC<DraggableFieldProps> = ({
     );
 };
 
+const FIELD_TEMPLATES: Record<string, (fields: string[]) => string[]> = {
+    'Dimensions': (fields) =>
+        fields.filter(f => !/(sum|count|total|amount|revenue|avg|min|max|_id|id)/i.test(f)),
+
+    'Measures': (fields) =>
+        fields.filter(f => /(sum|count|total|amount|revenue|sales|cost|avg|min|max|price|quantity)/i.test(f)),
+
+    'Dates': (fields) =>
+        fields.filter(f => /(date|time|_at|created|updated|posted|year|month|day|timestamp)/i.test(f)),
+
+    'Identifiers': (fields) =>
+        fields.filter(f => /(id|_id|uid|key|uuid|code)/i.test(f)),
+};
+
 interface DraggableGroupProps {
     groupName: string;
     fields: string[];
@@ -244,11 +258,34 @@ const FieldGroupingPanel: React.FC<FieldGroupingPanelProps> = ({
     }
 
     const applyTemplate = (templateName: string) => {
-        // Logic will be implemented in the next task
-        if (!groups[templateName]) {
-            const newGroups = { ...groups, [templateName]: [] };
-            updateGroups(newGroups);
+        const matcher = FIELD_TEMPLATES[templateName];
+        if (!matcher) return;
+
+        // Get all available fields (not already in other groups)
+        const assignedFields = new Set(Object.values(groups).flat());
+        const availableFields = allFields.filter(f => !assignedFields.has(f));
+
+        // Match fields using template pattern
+        const matchingFields = matcher(availableFields);
+
+        if (matchingFields.length === 0) {
+            toast.error(`No fields match ${templateName} pattern`);
+            return;
         }
+
+        if (groups[templateName]) {
+            toast.error(`Group "${templateName}" already exists`);
+            return;
+        }
+
+        // Create group with matched fields
+        const newGroups = {
+            ...groups,
+            [templateName]: matchingFields
+        };
+        updateGroups(newGroups);
+
+        toast.success(`${templateName}: ${matchingFields.length} fields added`);
     };
 
     const handleAddGroup = () => {
