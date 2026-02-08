@@ -253,17 +253,82 @@ export interface ModelConfigurationV2 {
     metrics: Metric[];
     contextFields: ModelContextField[]; // Fields explicitly scanned for AI
 
-    globalFilters: Filter[]; // Pre-cooked filters
-}
+        globalFilters: Filter[]; // Pre-cooked filters
 
-export interface Configuration {
-    id: string;
-    user_id?: string;
-    name: string;
-    description?: string;
-    type: 'db_config' | 'analysis_config';
-    config: any; // Using any for flexibility to store Partial<AppState> keys
-    is_public: boolean;
-    created_at?: string;
-    updated_at?: string;
-}
+    }
+
+    
+
+    export interface Configuration {
+
+        id: string;
+
+        user_id?: string;
+
+        name: string;
+
+        description?: string;
+
+        type: 'db_config' | 'analysis_config';
+
+        config: any; // Using any for flexibility to store Partial<AppState> keys
+
+        is_public: boolean;
+
+        created_at?: string;
+
+        updated_at?: string;
+
+    }
+
+    
+
+    // --- Schema Registry Types ---
+
+    
+
+    export interface RegisteredColumn {
+
+        name: string;
+
+        type: string;
+
+        isPrimary: boolean;
+
+        foreignKey?: {
+
+            table: string;
+
+            column: string;
+
+        };
+
+    }
+
+    
+
+    export interface RegisteredTable {
+
+        name: string;
+
+        columns: RegisteredColumn[];
+
+        description?: string;
+
+    }
+
+    
+
+    export interface SchemaRegistryEntry {
+
+        dbUrlHash: string;
+
+        tables: RegisteredTable[];
+
+        schemaHash: string;
+
+        lastSyncedAt: string;
+
+    }
+
+    
