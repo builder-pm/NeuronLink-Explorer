@@ -33,6 +33,7 @@ export async function extractSchema(url: string, anonKey: string): Promise<Regis
   const response = await fetch(restUrl, {
     headers: {
       'apikey': anonKey,
+      'Authorization': `Bearer ${anonKey}`,
       'Accept': 'application/json',
       'Content-Type': 'application/json'
     }
