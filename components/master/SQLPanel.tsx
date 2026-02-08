@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Editor, OnMount } from '@monaco-editor/react';
-import { Play, AlignLeft, Rows3, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { Play, AlignLeft, PanelRightOpen, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, ChevronUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'sql-formatter';
 import { DataRow } from '../../types';
@@ -182,9 +182,9 @@ const SQLPanel: React.FC<SQLPanelProps> = ({
                                     ? 'bg-primary text-primary-foreground border-primary'
                                     : 'bg-card text-muted-foreground border-border hover:border-primary hover:text-foreground'
                             }`}
-                            title="Toggle Row Viewer"
+                            title="View selected row details in side panel"
                         >
-                            <Rows3 size={14} />
+                            <PanelRightOpen size={14} />
                             <span>Row View</span>
                         </button>
                     )}
