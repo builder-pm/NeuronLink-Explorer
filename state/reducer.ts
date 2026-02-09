@@ -103,6 +103,47 @@ const cleanupModelState = (state: AppState, newModelConfig: ModelConfiguration):
     };
 };
 
+/**
+ * Helper to ensure joins are in the correct format for the UI.
+ * Handles legacy or malformed join objects from saved configs.
+ */
+const normalizeJoins = (joins: any[] = []): Join[] => {
+    return joins.filter(j => !!j).map(j => {
+        const type = (j.type || 'INNER JOIN').toUpperCase();
+        const normalizedType = type === 'INNER' ? 'INNER JOIN' : (type === 'LEFT' ? 'LEFT JOIN' : (type === 'RIGHT' ? 'RIGHT JOIN' : type));
+
+        // If 'on' is missing, try to infer it from top-level from/to if they contain dots (tableName.columnName)
+        let on = j.on || { from: '', to: '' };
+
+        if ((!j.on || !j.on.from || !j.on.to) && j.from && j.to) {
+            const fromParts = j.from.split('.');
+            const toParts = j.to.split('.');
+            if (fromParts.length > 1 && toParts.length > 1) {
+                on = {
+                    from: fromParts[1],
+                    to: toParts[1]
+                };
+            }
+        }
+
+        // Final fallback to prevent crashes in DataModelCanvas.tsx accessing join.on.from
+        if (!on.from) on.from = 'id';
+        if (!on.to) on.to = 'id';
+
+        // Clean up table names in from/to (remove column part if present)
+        const from = j.from ? j.from.split('.')[0] : '';
+        const to = j.to ? j.to.split('.')[0] : '';
+
+        return {
+            ...j,
+            from,
+            to,
+            type: normalizedType as 'LEFT JOIN' | 'INNER JOIN' | 'RIGHT JOIN',
+            on
+        };
+    });
+};
+
 export const appReducer = (state: AppState, action: AppAction): AppState => {
     switch (action.type) {
         case ActionType.TOGGLE_THEME:
@@ -207,7 +248,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 filters: config.filters || state.filters,
                 selectedFields: config.selectedFields || state.selectedFields,
                 analysisActiveFields: config.analysisActiveFields || state.analysisActiveFields || [],
-                joins: config.joins || state.joins,
+                joins: normalizeJoins(config.joins || state.joins),
                 tablePositions: config.tablePositions || state.tablePositions,
                 fieldGroups: config.fieldGroups || state.fieldGroups,
                 fieldAliases: config.fieldAliases || state.fieldAliases,
