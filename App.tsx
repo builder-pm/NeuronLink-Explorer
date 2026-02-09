@@ -9,7 +9,6 @@ import PanelToggle from './components/PanelToggle';
 import DbCredentialsModal from './components/DbCredentialsModal';
 import TablePreviewModal from './components/TablePreviewModal';
 import ModelingSecondaryPanel from './components/ModelingSecondaryPanel';
-import ModelingMainArea from './components/ModelingMainArea';
 import ModelingPrimaryPanel from './components/ModelingPrimaryPanel';
 import MasterView from './components/views/MasterView';
 import { DataRow, PanelType, AIAction, Filter, PivotConfig, DatabaseType, AthenaCredentials, SupabaseCredentials, AppState, AppView, FieldGroups, Join, ModelConfiguration, FieldAliases } from './types';
@@ -18,6 +17,8 @@ import { useAppState, useAppDispatch } from './state/context';
 import { ActionType, AppAction } from './state/actions';
 import { generateQuery, generatePreviewQuery } from './utils/dataProcessing';
 import * as db from './services/database';
+import { chatService } from './services/chatService';
+import { getClient } from './services/supabase';
 import * as backend from './services/backend';
 import { appSupabase } from './services/appSupabase';
 import { syncSchemaRegistry } from './services/schemaRegistry';
@@ -92,6 +93,8 @@ interface PrimaryPanelProps {
   executeQuery: (query: string) => Promise<DataRow[]>;
   availableFields: string[];
   dispatch: React.Dispatch<AppAction>;
+  onSendMessage: (text: string) => void;
+  isAiLoading: boolean;
   isDemoMode: boolean;
   fieldAliases: FieldAliases;
   isGuest?: boolean;
@@ -105,6 +108,7 @@ interface PrimaryPanelProps {
 const PrimaryPanelComponent: React.FC<PrimaryPanelProps> = ({
   currentView, activePanel, selectedFields, onFieldChange, onAIAction, fieldGroups,
   executeQuery, availableFields, dispatch,
+  onSendMessage, isAiLoading,
   isDemoMode, fieldAliases, isGuest,
   modelConfiguration, confirmedModelConfiguration, joins, state
 }) => {
@@ -125,9 +129,17 @@ const PrimaryPanelComponent: React.FC<PrimaryPanelProps> = ({
           view: currentView,
           modelConfiguration: isDemoMode ? {} : (Object.keys(modelConfiguration).length > 0 ? modelConfiguration : confirmedModelConfiguration),
           joins: joins,
-          fieldAliases: fieldAliases
+          fieldAliases: fieldAliases,
+          fieldMetadata: state.fieldMetadata,
+          sampleValues: state.sampleValues,
+          schemaRegistry: state.schemaRegistry,
+          metrics: state.metrics
         }}
         suggestedPrompts={useMemo(() => generatePrompts(fieldGroups), [fieldGroups])}
+        chatMessages={state.chatMessages}
+        dispatch={dispatch}
+        onSendMessage={onSendMessage}
+        isAiLoading={isAiLoading}
       />
     );
   }
@@ -153,21 +165,12 @@ interface MainAreaProps {
   onExport: (type?: 'preview' | 'full') => void;
   isDemoMode: boolean;
   state: AppState;
-  tablesForCanvas: { name: string; fields: string[]; }[];
-  onPreviewTable: (table: string) => void;
-  // DB Props
-  onConfigureCredentialsClick: () => void;
-  onRefreshData: () => void;
-  isConnecting: boolean;
-  isConnected: boolean;
-  dbType: DatabaseType;
 }
 
 const MainAreaComponent: React.FC<MainAreaProps> = ({
   currentView, paginatedData, tableHeaders, isLoading, fileName, dispatch, currentPage,
   rowsPerPage, totalRows, onRowsPerPageChange, onExport, isDemoMode,
-  state, tablesForCanvas, onPreviewTable,
-  onConfigureCredentialsClick, onRefreshData, isConnecting, isConnected, dbType
+  state
 }) => {
   if (currentView === 'analysis') {
     return (
@@ -188,9 +191,7 @@ const MainAreaComponent: React.FC<MainAreaProps> = ({
       />
     );
   }
-  if (currentView === 'modeling') {
-    return <ModelingMainArea state={state} dispatch={dispatch} onPreviewTable={onPreviewTable} />;
-  }
+
   return null;
 }
 const MemoizedMainArea = memo(MainAreaComponent);
@@ -202,8 +203,8 @@ const App: React.FC = () => {
   const {
     currentView, isLoadingData, activePanel, isSecondaryPanelOpen, configName, fileName,
     processedData, selectedFields, analysisActiveFields, currentPage, rowsPerPage,
-    pivotConfig, filters, sqlQuery, joins, tablePositions, fieldGroups,
-    discoveredTables, modelConfiguration, confirmedModelConfiguration, isModelDirty,
+    pivotConfig, filters, sqlQuery, joins, fieldGroups,
+    discoveredTables, modelConfiguration, confirmedModelConfiguration,
     databaseType, athenaCredentials, supabaseCredentials,
     isConnectingToLakehouse, isLakehouseConnected, isDemoMode
   } = state;
@@ -228,6 +229,13 @@ const App: React.FC = () => {
         setIsGuest(false);
         localStorage.removeItem('neuronlink_guest_mode');
         initLogging();
+        // Fetch chat threads for logged-in user
+        try {
+          const threads = await chatService.getUserThreads();
+          dispatch({ type: ActionType.SET_THREADS, payload: threads });
+        } catch (error) {
+          console.error("Failed to fetch user threads:", error);
+        }
       } else if (storedGuestMode) {
         setIsGuest(true);
       }
@@ -236,7 +244,7 @@ const App: React.FC = () => {
     };
     initAuth();
 
-    const { data: { subscription } } = appSupabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = appSupabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null);
       dispatch({ type: ActionType.SET_USER, payload: (session?.user as any) ?? null });
       if (session?.user) {
@@ -244,16 +252,25 @@ const App: React.FC = () => {
         localStorage.removeItem('neuronlink_guest_mode');
         if (_event === 'SIGNED_IN') {
           logEvent('AUTH', 'LOGIN', { provider: session.user.app_metadata.provider });
+          // Fetch chat threads on sign-in
+          try {
+            const threads = await chatService.getUserThreads();
+            dispatch({ type: ActionType.SET_THREADS, payload: threads });
+          } catch (error) {
+            console.error("Failed to fetch user threads on sign-in:", error);
+          }
         }
       }
       if (_event === 'SIGNED_OUT') {
         logEvent('AUTH', 'LOGOUT');
         setIsGuest(false);
+        dispatch({ type: ActionType.SET_THREADS, payload: [] }); // Clear threads on sign-out
+        dispatch({ type: ActionType.SET_CURRENT_THREAD, payload: null }); // Clear current thread
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [dispatch]);
 
   const startResizing = useCallback((mouseDownEvent: React.MouseEvent) => {
     mouseDownEvent.preventDefault();
@@ -303,9 +320,9 @@ const App: React.FC = () => {
         // Sync Schema Registry
         try {
           const registry = await syncSchemaRegistry(credentials);
-          dispatch({ 
-            type: ActionType.SET_SCHEMA_REGISTRY_DATA, 
-            payload: { data: registry.data, driftDetected: registry.driftDetected } 
+          dispatch({
+            type: ActionType.SET_SCHEMA_REGISTRY_DATA,
+            payload: { data: registry.data, driftDetected: registry.driftDetected }
           });
           if (registry.driftDetected) {
             toast('Schema drift detected since last sync.', { icon: '⚠️' });
@@ -372,19 +389,40 @@ const App: React.FC = () => {
 
   // Run Query Effect
   useEffect(() => {
-    if (!dbService || (discoveredTables.length === 0 && !isLakehouseConnected && !isDemoMode)) return;
+    console.log('[App] RunQuery Effect Triggered', {
+      hasDbService: !!dbService,
+      discoveredTablesLen: discoveredTables.length,
+      isConnected: isLakehouseConnected,
+      isDemo: isDemoMode
+    });
+
+    if (!dbService || (discoveredTables.length === 0 && !isLakehouseConnected && !isDemoMode)) {
+      console.log('[App] RunQuery Aborted: DB Service or Tables missing');
+      return;
+    }
 
     const runQuery = async () => {
       dispatch({ type: ActionType.SET_LOADING, payload: true });
       try {
+        const activeModelConfig = Object.keys(modelConfiguration).length > 0
+          ? modelConfiguration
+          : confirmedModelConfiguration;
+
+        console.log('[App] Generating query with:', {
+          activeTables: Object.keys(activeModelConfig),
+          pivotRows: pivotConfig.rows
+        });
+
         const fullQueryRaw = await generateQuery(
-          { modelConfig: confirmedModelConfiguration, joins },
+          { modelConfig: activeModelConfig, joins },
           pivotConfig,
           filters,
           discoveredTables,
           state.fieldAliases,
           analysisActiveFields
         );
+
+        console.log('[App] Generated Query:', fullQueryRaw);
 
         let queryToRun: string | null = fullQueryRaw;
         if (isGuest && fullQueryRaw) {
@@ -397,6 +435,7 @@ const App: React.FC = () => {
         if (queryToRun && queryToRun.length > 0) {
           const startTime = performance.now();
           const results = await dbService.executeQuery(queryToRun);
+          console.log('[App] Query Results:', results.length, 'rows');
           dispatch({ type: ActionType.SET_PROCESSED_DATA, payload: results });
 
           logEvent('DATA', 'QUERY_EXECUTE', {
@@ -405,6 +444,9 @@ const App: React.FC = () => {
             row_count: results.length,
             success: true
           });
+        } else {
+          console.log('[App] No query to run (null or empty)');
+          dispatch({ type: ActionType.SET_PROCESSED_DATA, payload: [] });
         }
       } catch (error: any) {
         console.error("Error executing query:", error);
@@ -415,15 +457,19 @@ const App: React.FC = () => {
       }
     };
     runQuery();
-  }, [dbService, sqlQuery, pivotConfig, filters, joins, confirmedModelConfiguration, discoveredTables, dispatch, isLakehouseConnected, isDemoMode, state.fieldAliases, analysisActiveFields]);
+  }, [dbService, sqlQuery, pivotConfig, filters, joins, confirmedModelConfiguration, modelConfiguration, discoveredTables, dispatch, isLakehouseConnected, isDemoMode, state.fieldAliases, analysisActiveFields]);
 
   const handleRefreshData = useCallback(() => {
     if (!dbService) return;
     const runQuery = async () => {
       dispatch({ type: ActionType.SET_LOADING, payload: true });
       try {
+        const activeModelConfig = Object.keys(modelConfiguration).length > 0
+          ? modelConfiguration
+          : confirmedModelConfiguration;
+
         const fullQuery = await generateQuery(
-          { modelConfig: confirmedModelConfiguration, joins },
+          { modelConfig: activeModelConfig, joins },
           pivotConfig,
           filters,
           discoveredTables,
@@ -442,7 +488,7 @@ const App: React.FC = () => {
       }
     };
     runQuery();
-  }, [dbService, dispatch, filters, joins, confirmedModelConfiguration, pivotConfig, discoveredTables]);
+  }, [dbService, dispatch, filters, joins, confirmedModelConfiguration, modelConfiguration, pivotConfig, discoveredTables]);
 
   const handleExport = useCallback(async (type?: 'preview' | 'full') => {
     if (isGuest) {
@@ -497,13 +543,181 @@ const App: React.FC = () => {
       if (currentView !== 'modeling') dispatch({ type: ActionType.SET_VIEW, payload: 'modeling' });
       dispatch({ type: ActionType.SET_JOINS, payload: action.modelProposal.joins });
       dispatch({ type: ActionType.SET_MODEL_CONFIGURATION, payload: action.modelProposal.modelConfiguration });
+      // Auto-confirm AI proposals so they take effect in queries immediately
+      dispatch({ type: ActionType.CONFIRM_MODEL });
       toast.success("AI Proposal Applied");
     } else if (action.action === 'propose_analysis' && action.analysisProposal) {
       dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: action.analysisProposal.pivotConfig });
       dispatch({ type: ActionType.SET_FILTERS, payload: action.analysisProposal.filters });
+
+      // Phase 7 Fix: Ensure analysisActiveFields are updated so the table is not empty
+      const p = action.analysisProposal.pivotConfig;
+      const f = action.analysisProposal.filters;
+      const newActiveFields = [...new Set([
+        ...p.rows,
+        ...p.columns,
+        ...p.values.map(v => v.field),
+        ...f.map(filt => filt.field)
+      ])];
+      dispatch({ type: ActionType.SET_ANALYSIS_ACTIVE_FIELDS, payload: newActiveFields });
+
       toast.success("AI Analysis applied!");
+    } else if (action.action === 'suggest_fields' && action.suggestedFields) {
+      // Phase 7: Handle AI field suggestions
+      // Merge suggested fields into current model configuration
+      const newModelConfig = { ...modelConfiguration };
+      action.suggestedFields.forEach(suggestion => {
+        const currentFields = newModelConfig[suggestion.table] || [];
+        newModelConfig[suggestion.table] = [...new Set([...currentFields, ...suggestion.fields])];
+      });
+
+      // Also merge suggested joins if provided
+      if (action.suggestedJoins && action.suggestedJoins.length > 0) {
+        const existingJoinKeys = new Set(joins.map(j => `${j.from}-${j.to}-${j.on.from}-${j.on.to}`));
+        const newJoins = [...joins];
+
+        action.suggestedJoins.forEach(sj => {
+          const key = `${sj.from}-${sj.to}-${sj.on.from}-${sj.on.to}`;
+          if (!existingJoinKeys.has(key)) {
+            newJoins.push(sj);
+            existingJoinKeys.add(key);
+          }
+        });
+
+        dispatch({ type: ActionType.SET_JOINS, payload: newJoins });
+      }
+
+      dispatch({ type: ActionType.SET_MODEL_CONFIGURATION, payload: newModelConfig });
+      // Auto-confirm suggested fields so queries can run with them
+      dispatch({ type: ActionType.CONFIRM_MODEL });
+      toast.success(`Added ${action.suggestedFields.length} table(s) to your model!`, { icon: '✨' });
     }
-  }, [dispatch, pivotConfig, isGuest, currentView]);
+  }, [dispatch, pivotConfig, isGuest, currentView, modelConfiguration, joins, confirmedModelConfiguration]);
+
+  const handleSendChatMessage = useCallback(async (text: string) => {
+    if (text.trim() === '' || state.isAiLoading) return;
+
+    const userMessage: import('./types').ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: text.trim()
+    };
+
+    // Dispatch User Message
+    dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: userMessage });
+    dispatch({ type: ActionType.SET_AI_LOADING, payload: true });
+
+    // Cloud Persistence: Create thread if needed, save message
+    let activeThreadId = state.currentThreadId;
+    if (state.currentUser && getClient()) { // Check if logged in and client initialized
+      if (!activeThreadId) {
+        const { data: { user } } = await getClient()!.auth.getUser();
+        if (user) {
+          const thread = await chatService.createThread(text.trim().substring(0, 50), user.id);
+          if (thread) {
+            activeThreadId = thread.id;
+            dispatch({ type: ActionType.SET_CURRENT_THREAD, payload: activeThreadId });
+            dispatch({ type: ActionType.ADD_THREAD, payload: thread });
+          }
+        }
+      }
+
+      if (activeThreadId) {
+        await chatService.addMessage(activeThreadId, userMessage);
+      }
+    }
+
+    try {
+      const history = [...state.chatMessages, userMessage];
+
+      // Prepare semantic context
+      const context: import('./types').SemanticContext = {
+        configName: configName,
+        view: currentView,
+        modelConfiguration: isDemoMode ? {} : (Object.keys(modelConfiguration).length > 0 ? modelConfiguration : confirmedModelConfiguration),
+        joins: joins,
+        fieldAliases: state.fieldAliases,
+        fieldMetadata: state.fieldMetadata,
+        sampleValues: state.sampleValues,
+        schemaRegistry: state.schemaRegistry,
+        metrics: state.metrics
+      };
+
+      const { getAIResponse, getAIResponseWithData } = await import('./services/gemini');
+      const { action, textResponse } = await getAIResponse(history, userMessage.text, context);
+
+      if (action?.action === 'query' && action.query) {
+        const initialModelMessage: import('./types').ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'model',
+          text: textResponse,
+          isLoading: true
+        };
+        dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: initialModelMessage });
+        if (activeThreadId) {
+          await chatService.addMessage(activeThreadId, initialModelMessage);
+        }
+
+        let queryResult: DataRow[] = [];
+        if (dbService) {
+          queryResult = await dbService.executeQuery(action.query);
+        }
+
+        const finalResponse = await getAIResponseWithData(userMessage.text, action.query, queryResult);
+
+        const finalModelMessage: import('./types').ChatMessage = {
+          id: (Date.now() + 2).toString(),
+          role: 'model',
+          text: finalResponse
+        };
+        dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: finalModelMessage });
+        if (activeThreadId) {
+          await chatService.addMessage(activeThreadId, finalModelMessage);
+        }
+
+      } else if (action?.action === 'suggest_fields') {
+        const modelMessage: import('./types').ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'model',
+          text: textResponse,
+          suggestAction: action
+        };
+        dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: modelMessage });
+        if (activeThreadId) {
+          await chatService.addMessage(activeThreadId, modelMessage);
+        }
+      } else {
+        if (action) {
+          handleAIAction(action);
+        }
+        const modelMessage: import('./types').ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'model',
+          text: textResponse
+        };
+        dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: modelMessage });
+
+        // Cloud Persistence: Save model message
+        if (activeThreadId) {
+          await chatService.addMessage(activeThreadId, modelMessage);
+        }
+      }
+
+    } catch (error: any) {
+      console.error("Error fetching AI response:", error);
+      const errorMessage: import('./types').ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: 'Sorry, I encountered an error. Please try again.'
+      };
+      dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: errorMessage });
+      if (activeThreadId) {
+        await chatService.addMessage(activeThreadId, errorMessage);
+      }
+    } finally {
+      dispatch({ type: ActionType.SET_AI_LOADING, payload: false });
+    }
+  }, [dispatch, state.isAiLoading, state.chatMessages, configName, currentView, isDemoMode, modelConfiguration, confirmedModelConfiguration, joins, state.fieldAliases, state.fieldMetadata, state.sampleValues, state.schemaRegistry, state.metrics, dbService, handleAIAction, state.currentUser, state.currentThreadId]);
 
   const handleDbFieldChange = useCallback((field: string, isSelected: boolean) => {
     const newSelectedFields = isSelected ? [...new Set([...selectedFields, field])] : selectedFields.filter(f => f !== field);
@@ -511,12 +725,35 @@ const App: React.FC = () => {
   }, [dispatch, selectedFields]);
 
   const handleAnalysisFieldChange = useCallback((field: string, isSelected: boolean) => {
+    // 1. Update Active Fields List
     const newFields = isSelected ? [...new Set([...analysisActiveFields, field])] : analysisActiveFields.filter(f => f !== field);
     dispatch({ type: ActionType.SET_ANALYSIS_ACTIVE_FIELDS, payload: newFields });
-    if (isSelected && !pivotConfig.rows.includes(field)) {
-      dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, rows: [...pivotConfig.rows, field] } });
-    } else if (!isSelected && pivotConfig.rows.includes(field)) {
-      dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, rows: pivotConfig.rows.filter(f => f !== field) } });
+
+    // 2. Sync Pivot Config
+    if (isSelected) {
+      // If selecting, add to rows if not present in any zone (default behavior)
+      const inRows = pivotConfig.rows.includes(field);
+      const inCols = pivotConfig.columns.includes(field);
+      const inVals = pivotConfig.values.some(v => v.field === field);
+
+      if (!inRows && !inCols && !inVals) {
+        dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, rows: [...pivotConfig.rows, field] } });
+      }
+    } else {
+      // If unselecting, remove from ALL zones to keep state consistent
+      const newRows = pivotConfig.rows.filter(f => f !== field);
+      const newCols = pivotConfig.columns.filter(f => f !== field);
+      const newVals = pivotConfig.values.filter(v => v.field !== field);
+
+      dispatch({
+        type: ActionType.SET_PIVOT_CONFIG,
+        payload: {
+          ...pivotConfig,
+          rows: newRows,
+          columns: newCols,
+          values: newVals
+        }
+      });
     }
   }, [dispatch, analysisActiveFields, pivotConfig]);
 
@@ -538,7 +775,11 @@ const App: React.FC = () => {
   const handleSaveCredentialsAndConnect = useCallback(async (type: DatabaseType, creds: AthenaCredentials | SupabaseCredentials | null) => {
     if (type === 'supabase' && creds) {
       if (isDemoMode) {
-        dispatch({ type: ActionType.TOGGLE_DEMO_MODE });
+        dispatch({ type: ActionType.TOGGLE_DEMO_MODE }); // This will reset state for non-demo mode
+      } else {
+        // Even if not in demo mode, if we are changing credentials/db, we should clear previous data
+        dispatch({ type: ActionType.SET_PROCESSED_DATA, payload: [] });
+        dispatch({ type: ActionType.SET_DISCOVERED_TABLES, payload: [] });
       }
       dispatch({ type: ActionType.SET_DATABASE_TYPE, payload: type });
       // Store credentials so they persist
@@ -644,6 +885,16 @@ const App: React.FC = () => {
   const handlePivotBatchUpdate = useCallback((newConfig: PivotConfig, newFilters: Filter[]) => {
     dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: newConfig });
     dispatch({ type: ActionType.SET_FILTERS, payload: newFilters });
+
+    // Sync Active Fields with the new Config (e.g. if "Clear All" was clicked)
+    const uniqueFields = new Set<string>();
+    newConfig.rows.forEach(f => uniqueFields.add(f));
+    newConfig.columns.forEach(f => uniqueFields.add(f));
+    newConfig.values.forEach(v => uniqueFields.add(v.field));
+
+    // Dispatch the new active fields list to keep Sidebar in sync
+    dispatch({ type: ActionType.SET_ANALYSIS_ACTIVE_FIELDS, payload: Array.from(uniqueFields) });
+
     logEvent('ANALYSIS', 'PIVOT_UPDATE', {
       rows: newConfig.rows,
       cols: newConfig.columns,
@@ -677,14 +928,7 @@ const App: React.FC = () => {
     }
   }, [dbService]);
 
-  const tablesForCanvas = useMemo(() => {
-    return discoveredTables
-      .filter(t => modelConfiguration[t.name])
-      .map(t => ({
-        name: t.name,
-        fields: modelConfiguration[t.name]
-      }));
-  }, [discoveredTables, modelConfiguration]);
+
 
   return (
     <div className="h-screen w-screen bg-background text-foreground flex flex-col font-sans">
@@ -777,13 +1021,7 @@ const App: React.FC = () => {
                 onExport={handleExport}
                 isDemoMode={isDemoMode}
                 state={state}
-                tablesForCanvas={tablesForCanvas}
-                onPreviewTable={handlePreviewTable}
-                onConfigureCredentialsClick={onConfigureCredentialsClick}
-                onRefreshData={onRefreshData}
-                isConnecting={isConnecting}
-                isConnected={isConnected}
-                dbType={dbType}
+
               />
               <PanelToggle
                 isOpen={isSecondaryPanelOpen}
@@ -824,13 +1062,14 @@ const App: React.FC = () => {
                   executeQuery={executeQuery}
                   availableFields={availableFields}
                   dispatch={dispatch}
+                  onSendMessage={handleSendChatMessage}
+                  isAiLoading={state.isAiLoading || false}
                   isDemoMode={isDemoMode}
                   fieldAliases={state.fieldAliases}
                   isGuest={isGuest}
-                  modelConfiguration={state.modelConfiguration}
+                  state={state} modelConfiguration={state.modelConfiguration}
                   confirmedModelConfiguration={state.confirmedModelConfiguration}
                   joins={state.joins}
-                  state={state}
                 />
               </div>
             </div>

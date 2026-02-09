@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { PanelType, AIAction, FieldGroups, DataRow, FieldAliases } from '../types';
+import { PanelType, AIAction, FieldGroups, DataRow, FieldAliases, SemanticContext, ChatMessage } from '../types';
+import { AppAction } from '../state/actions';
 import DataFieldsPanel from './DataFieldsPanel';
 import AiChatPanel from './AiChatPanel';
 import { FieldsIcon, AISparklesIcon } from './icons';
+import { Plus } from 'lucide-react';
 
 interface SidebarProps {
   activePanel: PanelType;
@@ -14,6 +16,18 @@ interface SidebarProps {
   availableFields: string[];
   fieldAliases: FieldAliases;
   isGuest?: boolean;
+  // New props
+  semanticContext: SemanticContext;
+  suggestedPrompts: string[];
+  chatMessages: ChatMessage[];
+  dispatch: React.Dispatch<AppAction>;
+  onSendMessage: (text: string) => void;
+  isAiLoading: boolean;
+  // Cloud Persistence
+  chatThreads?: import('../types').ChatThread[];
+  currentThreadId?: string | null;
+  onSelectThread?: (threadId: string) => void;
+  onNewChat?: () => void;
 }
 
 type SidebarTab = 'fields' | 'chat';
@@ -24,7 +38,6 @@ const Sidebar: React.FC<SidebarProps> = (props) => {
     onFieldChange,
     onAIAction,
     fieldGroups,
-    executeQuery,
     availableFields,
     isGuest
   } = props;
@@ -87,15 +100,37 @@ const Sidebar: React.FC<SidebarProps> = (props) => {
               <div className="w-12 h-1 bg-primary"></div>
             </div>
           ) : (
-            <AiChatPanel
-              onAIAction={onAIAction}
-              executeQuery={executeQuery}
-              availableFields={availableFields}
-            />
+            <div className="flex flex-col h-full">
+              {props.chatThreads && props.chatThreads.length > 0 && (
+                <div className="flex items-center justify-between p-2 border-b border-border bg-muted/20">
+                  <span className="text-xs font-bold uppercase text-muted-foreground">History</span>
+                  <button onClick={props.onNewChat} className="text-xs text-primary hover:text-primary/80 flex items-center gap-1">
+                    <Plus className="h-3 w-3" /> New Chat
+                  </button>
+                </div>
+              )}
+              {/* Thread List - Collapsible? Or just allow scrolling? For now, maybe just show recent? */}
+              {/* Actually, let's keep it simple: Render ChatPanel, but maybe put a History sidebar/drawer? 
+                    For now, I'll put a simple dropdown or distinct area if requested.
+                    Task says: "Add 'History' list in Sidebar (maybe a new tab or toggle)"
+                    Current Sidebar has Fields | Chat tabs.
+                    Inside Chat, maybe we can toggle history?
+                    Let's Add a "History" toggle inside the Chat tab logic here?
+                */}
+              {/* Let's just modify the layout slightly. */}
+
+              <AiChatPanel
+                onAIAction={onAIAction}
+                suggestedPrompts={props.suggestedPrompts}
+                chatMessages={props.chatMessages}
+                onSendMessage={props.onSendMessage}
+                isLoading={props.isAiLoading}
+              />
+            </div>
           )
         )}
       </div>
-    </aside>
+    </aside >
   );
 };
 

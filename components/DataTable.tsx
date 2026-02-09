@@ -1,5 +1,6 @@
 import React from 'react';
 import { DataRow } from '../types';
+import { prettifyFieldName } from '../utils/stringUtils';
 
 interface DataTableProps {
   data: DataRow[];
@@ -45,7 +46,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, tableHeaders, isLoading, cu
             <tr className="border-b-2 border-border">
               {headers.map(header => (
                 <th key={header} scope="col" className="px-4 py-2 font-semibold text-foreground whitespace-nowrap uppercase tracking-wide text-xs font-mono min-w-[100px]">
-                  <span>{header.replace(/_/g, ' ')}</span>
+                  <span>{prettifyFieldName(header)}</span>
                 </th>
               ))}
             </tr>

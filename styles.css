@@ -29,13 +29,15 @@
     --shadow-brutal-lg: 6px 6px 0 0 var(--border);
     --shadow-brutal-xl: 8px 8px 0 0 var(--border);
 
-    --font-sans: var(--font-space-grotesk);
-    --font-mono: var(--font-space-mono);
+    --font-sans: var(--font-fira-sans);
+    --font-mono: var(--font-fira-code);
 }
 
 /* CYBER-BRUTALISM THEME (Enforced Dark Mode) */
 :root {
     /* Fonts */
+    --font-fira-sans: "Fira Sans", sans-serif;
+    --font-fira-code: "Fira Code", monospace;
     --font-space-grotesk: "Space Grotesk", sans-serif;
     --font-space-mono: "Space Mono", monospace;
 
@@ -82,6 +84,47 @@
 
     --radius: 0rem;
     /* Hard edges - Brutalist */
+}
+
+/* Connection Badges */
+.badge-brutal {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    border: 2px solid var(--border);
+    box-shadow: 2px 2px 0 0 var(--border);
+    font-family: var(--font-mono);
+}
+
+.badge-brutal-success {
+    background-color: rgba(34, 197, 94, 0.1);
+    color: #22c55e;
+    border-color: #22c55e;
+    box-shadow: 2px 2px 0 0 #22c55e;
+}
+
+.badge-brutal-error {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+    border-color: #ef4444;
+    box-shadow: 2px 2px 0 0 #ef4444;
+}
+
+/* Dirty State Notification */
+.dirty-indicator {
+    padding: 0.25rem 0.5rem;
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border: 1px solid var(--primary-foreground);
+    box-shadow: 2px 2px 0 0 var(--primary-foreground);
 }
 
 /* Base Styles */

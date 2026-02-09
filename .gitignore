@@ -24,6 +24,20 @@ yarn-error.log*
 # vercel
 .vercel
 
+# planning docs (local only)
+.planning/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# supabase temp
+supabase/.temp/
+
+# temp scripts and status
+get_git_status.py
+git_status_clean.txt
+
+# agent state
+.agent/preview.log
+.agent/preview.pid

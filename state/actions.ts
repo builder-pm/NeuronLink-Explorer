@@ -14,7 +14,8 @@
     User,
     FieldMetadata,
     SchemaRegistryEntry,
-    Metric
+    Metric,
+    ChatMessage
 } from '../types';
 
 export enum ActionType {
@@ -83,7 +84,16 @@ export enum ActionType {
     SET_METRICS = 'SET_METRICS',
 
     // User
+    // User
     SET_USER = 'SET_USER',
+
+    // Chat
+    ADD_CHAT_MESSAGE = 'ADD_CHAT_MESSAGE',
+    SET_CHAT_MESSAGES = 'SET_CHAT_MESSAGES',
+    SET_AI_LOADING = 'SET_AI_LOADING',
+    SET_CURRENT_THREAD = 'SET_CURRENT_THREAD',
+    SET_THREADS = 'SET_THREADS',
+    ADD_THREAD = 'ADD_THREAD',
 }
 
 
@@ -137,4 +147,11 @@ export type AppAction =
     | { type: ActionType.UPDATE_METRIC; payload: { metricId: string; updates: Partial<Metric> } }
     | { type: ActionType.DELETE_METRIC; payload: { metricId: string } }
     | { type: ActionType.SET_METRICS; payload: { metrics: Metric[] } }
-    | { type: ActionType.SET_USER; payload: User | null };
+    | { type: ActionType.SET_METRICS; payload: { metrics: Metric[] } }
+    | { type: ActionType.SET_USER; payload: User | null }
+    | { type: ActionType.ADD_CHAT_MESSAGE; payload: ChatMessage }
+    | { type: ActionType.SET_CHAT_MESSAGES; payload: ChatMessage[] }
+    | { type: ActionType.SET_AI_LOADING; payload: boolean }
+    | { type: ActionType.SET_CURRENT_THREAD; payload: string | null }
+    | { type: ActionType.SET_THREADS; payload: import('../types').ChatThread[] }
+    | { type: ActionType.ADD_THREAD; payload: import('../types').ChatThread };

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import toast from 'react-hot-toast';
+import { useDrag } from 'react-dnd';
 import FieldGroupingPanel from './FieldGroupingPanel';
 import { ActionType, AppAction } from '../state/actions';
 import { AppState } from '../types';
@@ -10,8 +12,34 @@ interface ModelingPrimaryPanelProps {
     dispatch: React.Dispatch<AppAction>;
 }
 
+interface DraggableFieldProps {
+    field: string;
+    alias: string;
+}
+
+const DraggableField: React.FC<DraggableFieldProps> = ({ field, alias }) => {
+    const [{ isDragging }, drag] = useDrag(() => ({
+        type: 'field', // Matches ItemTypes.FIELD
+        item: { name: field },
+        collect: (monitor) => ({
+            isDragging: !!monitor.isDragging(),
+        }),
+    }), [field]);
+
+    return (
+        <div ref={drag} className={`flex items-center justify-between p-2 bg-muted/20 border border-border/50 text-xs hover:bg-muted/30 transition-colors rounded-sm cursor-grab ${isDragging ? 'opacity-50' : ''}`}>
+            <span className="font-medium">{alias}</span>
+            {alias !== field && (
+                <span className="text-[8px] text-muted-foreground italic truncate ml-2">({field})</span>
+            )}
+        </div>
+    );
+};
+
 const ModelingPrimaryPanel: React.FC<ModelingPrimaryPanelProps> = ({ state, dispatch }) => {
     const [activeTab, setActiveTab] = useState<'fields' | 'groups'>('groups');
+    const [isScanningAll, setIsScanningAll] = useState(false);
+    const [scanProgress, setScanProgress] = useState<{ current: number; total: number; label: string } | undefined>(undefined);
 
     const { modelConfiguration, fieldGroups } = state;
 
@@ -19,6 +47,43 @@ const ModelingPrimaryPanel: React.FC<ModelingPrimaryPanelProps> = ({ state, disp
     const availableFields = Object.entries(modelConfiguration).flatMap(([tableName, fields]) =>
         fields.map(field => `${tableName}.${field}`)
     );
+
+    const handleScanAll = async () => {
+        alert('Scan All Triggered!');
+        console.log('[handleScanAll] Starting...', { availableFieldsCount: availableFields.length });
+        if (availableFields.length === 0) {
+            toast.error('No fields in model to scan.');
+            return;
+        }
+
+        setIsScanningAll(true);
+        const total = availableFields.length;
+        const toastId = 'scanning-all-fields';
+
+        try {
+            for (let i = 0; i < total; i++) {
+                const fieldKey = availableFields[i];
+                console.log(`[handleScanAll] Scanning ${i + 1}/${total}: ${fieldKey}`);
+                const [tableName, fieldName] = fieldKey.split('.');
+
+                setScanProgress({ current: i + 1, total, label: `${tableName}.${fieldName}` });
+                toast.loading(`Scanning ${i + 1}/${total}: ${fieldName}...`, { id: toastId });
+
+                const values = await db.fetchSampleValues(tableName, fieldName);
+                dispatch({
+                    type: ActionType.SET_SAMPLE_VALUES,
+                    payload: { fieldKey, values }
+                });
+            }
+            toast.success(`Successfully scanned ${total} fields!`, { id: toastId });
+        } catch (e) {
+            console.error('[handleScanAll] Failed:', e);
+            toast.error('Scan interrupted due to an error.', { id: toastId });
+        } finally {
+            setIsScanningAll(false);
+            setScanProgress(undefined);
+        }
+    };
 
     return (
         <aside className="w-full h-full bg-card flex flex-col overflow-hidden">
@@ -78,6 +143,9 @@ const ModelingPrimaryPanel: React.FC<ModelingPrimaryPanelProps> = ({ state, disp
                                 payload: { fieldKey, values }
                             });
                         }}
+                        onScanAll={handleScanAll}
+                        isScanningAll={isScanningAll}
+                        scanProgress={scanProgress}
                         allFields={availableFields}
                     />
                 )}
@@ -95,12 +163,11 @@ const ModelingPrimaryPanel: React.FC<ModelingPrimaryPanelProps> = ({ state, disp
                                     </div>
                                     <div className="space-y-1">
                                         {fields.map(field => (
-                                            <div key={field} className="flex items-center justify-between p-2 bg-muted/20 border border-border/50 text-xs hover:bg-muted/30 transition-colors rounded-sm">
-                                                <span className="font-medium">{state.fieldAliases[`${tableName}.${field}`] || field}</span>
-                                                {state.fieldAliases[`${tableName}.${field}`] && (
-                                                    <span className="text-[8px] text-muted-foreground italic truncate ml-2">({field})</span>
-                                                )}
-                                            </div>
+                                            <DraggableField
+                                                key={field}
+                                                field={field}
+                                                alias={state.fieldAliases[`${tableName}.${field}`] || field}
+                                            />
                                         ))}
                                     </div>
                                 </div>

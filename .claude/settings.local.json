@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vite build)",
+      "Bash(grep:*)",
+      "Bash(tr:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\ndocs: initialize project\n\nDB configuration fixes and semantic context enhancement for NeuronLink Lakehouse\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "WebSearch",
+      "Bash(git commit:*)",
+      "Bash(npm run dev:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Skill(gsd:plan-phase)",
+      "Bash(npx tsc:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(findstr:*)",
+      "Bash(dir:*)",
+      "Bash(cat:*)",
+      "Bash(git -C \"C:\\\\Users\\\\naman\\\\OneDrive\\\\Desktop\\\\Vibe Coding 2026\\\\NeuronLink Lakehouse\\\\NeuronLink-lakehouse\" check-ignore -q .planning)"
+    ]
+  }
+}

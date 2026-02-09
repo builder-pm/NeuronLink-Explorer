@@ -32,7 +32,7 @@ const SaveConfigModal: React.FC<SaveConfigModalProps> = ({ isOpen, onClose, type
                 fieldMetadata: state.fieldMetadata,
                 sampleValues: state.sampleValues,
                 hiddenFields: Array.from(state.hiddenFields || []),
-                fieldOrder: [] // Placeholder for now
+                fieldOrder: state.fieldGroups ? Object.values(state.fieldGroups).flat() : []
             };
 
             await configService.saveConfig({

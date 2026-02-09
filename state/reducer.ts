@@ -1,6 +1,7 @@
-import { AppState, PivotConfig, ModelConfiguration, FieldMetadata } from '../types';
+import { AppState, PivotConfig, ModelConfiguration } from '../types';
 import { AppAction, ActionType } from './actions';
 import { inferDataType } from '../utils/metadataInference';
+import { initializeFieldMetadata } from '../utils/stateHelpers';
 import {
     initialSql,
     INITIAL_FIELD_GROUPS,
@@ -61,6 +62,45 @@ export const initialState: AppState = {
     schemaRegistry: null,
     isDriftDetected: false,
     currentUser: null,
+    isAiLoading: false,
+    chatMessages: [{
+        id: 'welcome',
+        role: 'model',
+        text: "Hello! I'm your AI data assistant. I can help you query your data, build models, and analyze metrics. Try asking 'Show me the revenue by month' or 'Analyze the customer churn'."
+    }],
+    currentThreadId: null,
+    chatThreads: []
+};
+
+/**
+ * Helper to clean up state when model configuration changes.
+ * Removes fields from pivot, filters, and active lists if they are no longer in the model.
+ */
+const cleanupModelState = (state: AppState, newModelConfig: ModelConfiguration): Partial<AppState> => {
+    const allowedFields = new Set<string>();
+    Object.values(newModelConfig).forEach(fields => {
+        fields.forEach(f => allowedFields.add(f));
+    });
+
+    const newPivotConfig = {
+        rows: state.pivotConfig.rows.filter(f => allowedFields.has(f)),
+        columns: state.pivotConfig.columns.filter(f => allowedFields.has(f)),
+        values: state.pivotConfig.values.filter(v => allowedFields.has(v.field))
+    };
+
+    const newAnalysisActiveFields = state.analysisActiveFields.filter(f => allowedFields.has(f));
+    const newSelectedFields = state.selectedFields.filter(f => allowedFields.has(f));
+    const newFilters = state.filters.filter(f => allowedFields.has(f.field));
+
+    // Also update field groups to remove invalid fields? 
+    // Maybe too aggressive, but let's stick to the core query-breaking state.
+
+    return {
+        pivotConfig: newPivotConfig,
+        analysisActiveFields: newAnalysisActiveFields,
+        selectedFields: newSelectedFields,
+        filters: newFilters
+    };
 };
 
 export const appReducer = (state: AppState, action: AppAction): AppState => {
@@ -143,8 +183,26 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             return { ...initialState };
         case ActionType.LOAD_CONFIG:
             const config = action.payload;
-            return {
+
+            // Synthesize discoveredTables from loaded modelConfiguration if not already present
+            let synthesizedTables = state.discoveredTables;
+            if (config.modelConfiguration && Object.keys(config.modelConfiguration).length > 0) {
+                const existingTableNames = new Set(state.discoveredTables.map(t => t.name));
+                const configTableNames = Object.keys(config.modelConfiguration);
+
+                const missingTables = configTableNames.filter(name => !existingTableNames.has(name));
+                if (missingTables.length > 0) {
+                    const newTables = missingTables.map(tableName => ({
+                        name: tableName,
+                        fields: config.modelConfiguration[tableName] || []
+                    }));
+                    synthesizedTables = [...state.discoveredTables, ...newTables];
+                }
+            }
+
+            const pendingState = {
                 ...state,
+                discoveredTables: synthesizedTables,
                 pivotConfig: config.pivotConfig || state.pivotConfig,
                 filters: config.filters || state.filters,
                 selectedFields: config.selectedFields || state.selectedFields,
@@ -155,25 +213,33 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 fieldAliases: config.fieldAliases || state.fieldAliases,
                 fieldMetadata: config.fieldMetadata || state.fieldMetadata,
                 sampleValues: config.sampleValues || state.sampleValues,
-                hiddenFields: config.hiddenFields ? new Set(config.hiddenFields) : state.hiddenFields,
+                hiddenFields: config.hiddenFields ? new Set(config.hiddenFields as string[]) : state.hiddenFields,
                 configName: config.configName || state.configName,
                 fileName: config.fileName || state.fileName,
                 sqlQuery: config.sqlQuery || state.sqlQuery,
                 modelConfiguration: config.modelConfiguration || state.modelConfiguration,
                 confirmedModelConfiguration: config.confirmedModelConfiguration || state.confirmedModelConfiguration,
-                isModelDirty: false, // Always start clean on load
+                isModelDirty: false,
                 databaseType: config.databaseType || state.databaseType,
                 athenaCredentials: config.athenaCredentials || state.athenaCredentials,
                 supabaseCredentials: config.supabaseCredentials || state.supabaseCredentials,
                 isDemoMode: config.isDemoMode !== undefined ? config.isDemoMode : state.isDemoMode,
             };
+
+            // Enforce cleanup on the loaded state to ensure consistency
+            const cleanedUpdates = cleanupModelState(pendingState, pendingState.modelConfiguration);
+
+            return {
+                ...pendingState,
+                ...cleanedUpdates
+            };
+
         case ActionType.LOAD_ANALYSIS_CONFIG:
             const analysisConfig = action.payload;
             return {
                 ...state,
                 pivotConfig: analysisConfig.pivotConfig || state.pivotConfig,
                 filters: analysisConfig.filters || state.filters,
-                // We might want to switch view to analysis if loading this config
                 currentView: 'analysis',
                 activePanel: 'fields',
             };
@@ -191,12 +257,11 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 newConfig.values = newConfig.values.filter(v => v.field !== field);
                 newConfig[targetZone] = [...newConfig[targetZone], field];
             }
-            // Automatically select the field if it's not already
-            const newSelectedFields = state.selectedFields.includes(field)
-                ? state.selectedFields
-                : [...state.selectedFields, field];
+            const newAnalysisActiveFields = state.analysisActiveFields.includes(field)
+                ? state.analysisActiveFields
+                : [...state.analysisActiveFields, field];
 
-            return { ...state, pivotConfig: newConfig, selectedFields: newSelectedFields };
+            return { ...state, pivotConfig: newConfig, analysisActiveFields: newAnalysisActiveFields };
         }
         case ActionType.REMOVE_PIVOT_ITEM: {
             const { item, zone } = action.payload;
@@ -206,7 +271,15 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             } else {
                 newConfig[zone] = (newConfig[zone] as string[]).filter(field => field !== item);
             }
-            return { ...state, pivotConfig: newConfig };
+
+            const usedFields = new Set<string>();
+            newConfig.rows.forEach(f => usedFields.add(f));
+            newConfig.columns.forEach(f => usedFields.add(f));
+            newConfig.values.forEach(v => usedFields.add(v.field));
+
+            const newActiveFields = Array.from(usedFields);
+
+            return { ...state, pivotConfig: newConfig, analysisActiveFields: newActiveFields };
         }
         case ActionType.RENAME_PIVOT_VALUE: {
             const { index, newName } = action.payload;
@@ -227,7 +300,6 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             return { ...state, isConnectingToLakehouse: action.payload };
         case ActionType.TOGGLE_DEMO_MODE:
             const newDemoMode = !state.isDemoMode;
-            // Switching TO demo mode: reset to a fresh demo state
             if (newDemoMode) {
                 const demoModelConfig: ModelConfiguration = {
                     "jobs": ["job_id", "country_code", "position_month", "source_id", "language", "total_jobs", "total_positions", "data_source", "advertiser", "activity_status", "seniority"],
@@ -236,7 +308,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 };
                 const demoState: AppState = {
                     ...initialState,
-                    theme: state.theme, // preserve theme
+                    theme: state.theme,
                     databaseType: 'sqlite',
                     isDemoMode: true,
                     currentView: 'analysis',
@@ -255,10 +327,8 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 };
                 return demoState;
             } else {
-                // Switching OFF demo mode: reset data, keep config
                 return {
                     ...state,
-                    // Reset data-specific state
                     processedData: [],
                     discoveredTables: [],
                     modelConfiguration: {},
@@ -268,8 +338,13 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                     analysisActiveFields: [],
                     sqlQuery: 'SELECT "Please connect to a data source to begin" as message;',
                     currentPage: 1,
-                    // Keep UI config like pivot, filters, joins, positions, groups, names
-                    // Set mode and view for lakehouse connection
+                    fieldGroups: { "Uncategorized": [] },
+                    fieldAliases: {},
+                    fieldMetadata: {},
+                    sampleValues: {},
+                    joins: [],
+                    pivotConfig: { rows: [], columns: [], values: [] },
+                    filters: [],
                     isDemoMode: false,
                     databaseType: 'athena',
                     currentView: 'modeling',
@@ -281,65 +356,54 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             const { tableName, fields, isSelected } = action.payload;
             const newModelConfig = { ...state.modelConfiguration };
             let newJoins = state.joins;
-            const newFieldMetadata = { ...state.fieldMetadata };
 
-            if (isSelected === false) { // Table is being deselected
+            if (isSelected === false) {
                 delete newModelConfig[tableName];
-                // Also remove any joins associated with this table
                 newJoins = state.joins.filter(j => j.from !== tableName && j.to !== tableName);
-            } else if (isSelected === true) { // Table is being selected
+            } else if (isSelected === true) {
                 const allFieldsForTable = state.discoveredTables.find(t => t.name === tableName)?.fields || [];
                 newModelConfig[tableName] = allFieldsForTable;
-
-                // Initialize metadata for these fields from registry (unified source)
-                const registryTable = state.schemaRegistry?.tables.find(t => t.name === tableName);
-                allFieldsForTable.forEach(field => {
-                    const fieldKey = `${tableName}.${field}`;
-                    if (!newFieldMetadata[fieldKey]) {
-                        const registryCol = registryTable?.columns.find(c => c.name === field);
-
-                        newFieldMetadata[fieldKey] = {
-                            description: registryCol?.description || '',
-                            dataType: registryCol?.semanticType || inferDataType(field),
-                            isPrimary: registryCol?.isPrimary,
-                            foreignKey: registryCol?.foreignKey
-                        };
-                    }
-                });
-            } else if (fields) { // Fields for an existing table are being updated
+            } else if (fields) {
                 newModelConfig[tableName] = fields;
-
-                // Initialize metadata for any new fields from registry (unified source)
-                const registryTable = state.schemaRegistry?.tables.find(t => t.name === tableName);
-                fields.forEach(field => {
-                    const fieldKey = `${tableName}.${field}`;
-                    if (!newFieldMetadata[fieldKey]) {
-                        const registryCol = registryTable?.columns.find(c => c.name === field);
-
-                        newFieldMetadata[fieldKey] = {
-                            description: registryCol?.description || '',
-                            dataType: registryCol?.semanticType || inferDataType(field),
-                            isPrimary: registryCol?.isPrimary,
-                            foreignKey: registryCol?.foreignKey
-                        };
-                    }
-                });
             }
+
+            const newFieldMetadata = initializeFieldMetadata(
+                newModelConfig,
+                state.fieldMetadata,
+                state.schemaRegistry
+            );
+
+            const updates = cleanupModelState({ ...state, pivotConfig: state.pivotConfig }, newModelConfig);
 
             return {
                 ...state,
                 modelConfiguration: newModelConfig,
+                confirmedModelConfiguration: newModelConfig,
                 joins: newJoins,
                 fieldMetadata: newFieldMetadata,
-                isModelDirty: true
+                isModelDirty: false,
+                ...updates
             };
         }
-        case ActionType.SET_MODEL_CONFIGURATION:
+        case ActionType.SET_MODEL_CONFIGURATION: {
+            const newModelConfig = action.payload;
+            const newFieldMetadata = initializeFieldMetadata(
+                newModelConfig,
+                state.fieldMetadata,
+                state.schemaRegistry
+            );
+
+            const updates = cleanupModelState({ ...state, pivotConfig: state.pivotConfig }, newModelConfig);
+
             return {
                 ...state,
-                modelConfiguration: action.payload,
-                isModelDirty: true
+                modelConfiguration: newModelConfig,
+                confirmedModelConfiguration: newModelConfig,
+                fieldMetadata: newFieldMetadata,
+                isModelDirty: false,
+                ...updates
             };
+        }
         case ActionType.CONFIRM_MODEL: {
             return {
                 ...state,
@@ -409,6 +473,39 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
 
         case ActionType.SET_USER:
             return { ...state, currentUser: action.payload };
+
+        case ActionType.ADD_CHAT_MESSAGE:
+            return {
+                ...state,
+                chatMessages: [...state.chatMessages, action.payload]
+            };
+
+        case ActionType.SET_CHAT_MESSAGES:
+            return {
+                ...state,
+                chatMessages: action.payload
+            };
+
+        case ActionType.SET_AI_LOADING:
+            return {
+                ...state,
+                isAiLoading: action.payload
+            };
+        case ActionType.SET_CURRENT_THREAD:
+            return {
+                ...state,
+                currentThreadId: action.payload
+            };
+        case ActionType.SET_THREADS:
+            return {
+                ...state,
+                chatThreads: action.payload
+            };
+        case ActionType.ADD_THREAD:
+            return {
+                ...state,
+                chatThreads: [action.payload, ...state.chatThreads]
+            };
 
         case ActionType.SET_METRICS:
             return {

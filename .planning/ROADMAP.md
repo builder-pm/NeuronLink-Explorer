@@ -1,6 +1,6 @@
 # Project Roadmap: NeuronLink DB Config & Semantic Context
 
-**Current focus:** Phase 6 - Metric Validation
+**Current focus:** Phase 08 - Integration & Polish
 
 ---
 
@@ -8,12 +8,12 @@
 
 | Metric | Value |
 |--------|-------|
-| **Current Phase** | 6 of 8 (Metric Validation) |
-| **Overall Progress** | 75.0% |
-| **Requirements Complete** | 38/44 |
-| **Phases Complete** | 5/8 |
+| **Current Phase** | 8 of 8 (Integration & Polish) |
+| **Overall Progress** | 87.5% |
+| **Requirements Complete** | 42/44 |
+| **Phases Complete** | 7/8 |
 
-**Last activity:** 2026-02-09 - Completed Phase 05 (Metrics System)
+**Last activity:** 2026-02-11 - Planned Phase 08 (Integration & Polish)
 
 ---
 
@@ -22,7 +22,7 @@
 | # | Phase | Goal | Requirements | Est. Complexity |
 |---|-------|------|--------------|-----------------|
 | 1 | SQL Editor Fix | Query results display correctly | SQL-01 to SQL-05 | Low |
-| 2 | Preview Tab - Field Configuration | Users can organize, rename, and manage field visibility | PREV-01 to PREV-07 | Medium |
+| 2 | Preview Tab - Field Configuration | Users can organize, rename, and manage field visibility | PREV-01 to PREV-07 | Medium |       
 | 3 | Extended Configuration Schema | Configuration type supports semantic metadata | CONF-01 to CONF-08 | Medium |
 | 4 | Schema Registry | Auto-extract and store database schema with PK-FK | SCHM-01 to SCHM-06 | Medium |
 | 5 | Metrics System | Global and custom metrics with time intelligence | GMET-01 to GMET-07, CMET-01 to CMET-03 | High |
@@ -41,7 +41,7 @@
 Plans:
 - [x] 01-01-PLAN.md — Add results display functionality (state + table + errors)
 - [x] 01-03-PLAN.md — UI enhancements (resizable sections, collapsible results, row viewer search, SELECT * optimization)
-- [x] 01-02-PLAN.md — Human verification of results display
+- [x] 01-02-PLAN.md — Human verification of results display       
 
 ---
 
@@ -53,7 +53,7 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — Preview tab integration with FieldGroupingPanel
-- [x] 02-02-PLAN.md — Inline renaming, soft-hide, and reordering
+- [x] 02-02-PLAN.md — Inline renaming, soft-hide, and reordering  
 - [x] 02-03-PLAN.md — Pre-built group templates (Dimensions, Measures, Dates, Identifiers)
 - [x] 02-04-PLAN.md — Human verification of field management features
 
@@ -61,7 +61,7 @@ Plans:
 
 ## Phase 3: Extended Configuration Schema ✓ Complete
 
-**Goal:** Configuration type includes all semantic metadata fields
+**Goal:** Configuration type includes all semantic metadata fields  
 
 **Plans:** 4 plans
 
@@ -95,76 +95,53 @@ Plans:
 Plans:
 - [x] 05-01-PLAN.md — Types & Formula Parser (Metric interface, formula parsing, field extraction)
 - [x] 05-02-PLAN.md — MetricBuilderModal (Modal UI with real-time validation)
-- [x] 05-03-PLAN.md — State Management (Metric actions & reducer)
+- [x] 05-03-PLAN.md — State Management (Metric actions & reducer) 
 - [x] 05-04-PLAN.md — Database & MetricsPanel (Migrations, service, enhanced UI, verification)
 
 ---
 
-## Phase 6: Metric Validation
+## Phase 6: Metric Validation ✓ Complete
 
 **Goal:** Validate metric availability and suggest required additions
 
-**Requirements:**
-- MVAL-01: Validate metric against current model fields
-- MVAL-02: Unavailable metrics grayed with tooltip
-- MVAL-03: Click unavailable metric shows suggestion to add fields
-- MVAL-04: Suggestion includes specific table.field pairs
+**Plans:** 3 plans
 
-**Success Criteria:**
-1. Each metric checked against modelConfiguration fields
-2. Missing required fields → metric row grayed out
-3. Hover shows tooltip: "Missing: inventory.film_id, payment.amount"
-4. Click opens modal: "Add these fields to enable metric?"
-5. Modal lists tables to add, with "Add All" button
-6. Adding fields updates modelConfiguration and enables metric
-
-**Key Files:**
-- `components/master/MetricsPanel.tsx` (validation display)
-- `components/MetricSuggestionModal.tsx` (new)
-- `utils/metricValidator.ts` (new - validation logic)
-
-**Dependencies:** Phase 5 (needs metrics defined)
+Plans:
+- [x] 06-01-PLAN.md — Metric Validation Engine (TDD)
+- [x] 06-02-PLAN.md — MetricsPanel UI Integration (Visual feedback)
+- [x] 06-03-PLAN.md — MetricSuggestionModal (Resolution flow)     
 
 ---
 
-## Phase 7: AI Context Enhancement
+## Phase 7: AI Context Enhancement ✓ Complete
 
 **Goal:** AI Assistant has full semantic context with intelligent tiering
 
-**Requirements:**
-- AI-01: AI context includes current model
-- AI-02: AI context includes global schema
-- AI-03: AI context includes field descriptions
-- AI-04: AI context includes sample values
-- AI-05: Context tiering (trim samples → descriptions → schema)
-- AI-06: AI suggests but doesn't modify Configuration
+**Plans:** 3 plans
 
-**Success Criteria:**
-1. SemanticContext passed to AI includes all metadata
-2. System prompt includes field descriptions when available
-3. System prompt includes sample values for filter suggestions
-4. Token counting implemented, context trimmed if >4000 tokens
-5. Trimming priority: sample values first, then descriptions, then schema details
-6. AI responses can suggest "Add field X" but user must approve
-
-**Key Files:**
-- `services/gemini.ts` (generateSystemPrompt enhancement)
-- `utils/contextBuilder.ts` (new - build tiered context)
-- `components/AiChatPanel.tsx` (handle suggestions)
-
-**Dependencies:** Phase 4 (schema), Phase 3 (field metadata)
+Plans:
+- [x] 07-01-PLAN.md — [TDD] Core Context Builder (tiering logic & trimming)
+- [x] 07-02-PLAN.md — AI Service Integration (Gemini upgrade & Expansion protocol)
+- [x] 07-03-PLAN.md — Interactive Suggestions UI (Suggestion buttons & Thought rendering)
 
 ---
 
 ## Phase 8: Integration & Polish
 
-**Goal:** End-to-end testing, edge cases, UX improvements
+**Goal:** End-to-end flow testing, edge cases, UX polish
+
+**Plans:** 3 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Setup Playwright & E2E Smoke Test
+- [ ] 08-02-PLAN.md — UX Polish: Error Boundaries, Skeletons, & Shortcuts
+- [ ] 08-03-PLAN.md — Performance & Mobile: Context Toggle & Responsive Layout
 
 **Requirements:** Cross-cutting polish
 
 **Success Criteria:**
 1. Full flow works: Connect → Select tables → Configure fields → Define metrics → Query with AI
-2. Edge cases handled: empty tables, null values, disconnection
+2. Edge cases handled: empty tables, null values, disconnection     
 3. Loading states for all async operations
 4. Error boundaries prevent crashes
 5. Keyboard navigation for accessibility
@@ -179,21 +156,21 @@ Plans:
 ## Dependency Graph
 
 ```
-Phase 1 (SQL Editor) ───────────────────────────────────────┐
-                                                          │
-Phase 2 (Preview Tab) ────────┬───────────────────────────┤
-                              │                           │
-Phase 3 (Config Schema) ──────┴───────┬───────────────────┤
-                                      │                   │
-Phase 4 (Schema Registry) ────────────┴────┬──────────────┤
-                                           │              │
+Phase 1 (SQL Editor) ─────────────────────────────────────────────────────────┐
+                                                          │       
+Phase 2 (Preview Tab) ────────┬───────────────────────────┤   
+                              │                           │     
+Phase 3 (Config Schema) ──────┴────────┬──────────────────┤       
+                                      │                   │     
+Phase 4 (Schema Registry) ────────────┴───┬────────────────┤
+                                           │              │     
 Phase 5 (Metrics System) ──────────────────┴───┬──────────┤
-                                               │          │
+                                               │          │     
 Phase 6 (Metric Validation) ───────────────────┴──────────┤
-                                                          │
-Phase 7 (AI Context) ─────────────────────────────────────┤
-                                                          │
-Phase 8 (Integration) ────────────────────────────────────┘
+                                                          │       
+Phase 7 (AI Context) ─────────────────────────────────────┤ 
+                                                          │       
+Phase 8 (Integration) ────────────────────────────────────┘   
 ```
 
 **Parallel Opportunities:**
@@ -214,4 +191,4 @@ Phase 8 (Integration) ───────────────────�
 ---
 
 *Roadmap created: 2025-02-07*
-*Last updated: 2026-02-09 after Phase 5 completion*
+*Last updated: 2026-02-11 after Phase 08 planning*

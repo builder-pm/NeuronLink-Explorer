@@ -1,9 +1,7 @@
 import React from 'react';
 import { AppState, ModelingSecondaryPanelTab, FieldGroups } from '../types';
 import { AppAction, ActionType } from '../state/actions';
-import FieldGroupingPanel from './FieldGroupingPanel';
 import TableFieldSelector from './TableFieldSelector';
-import SqlEditorPanel from './SqlEditorPanel';
 import { DataRow } from '../types';
 
 interface ModelingSecondaryPanelProps {
@@ -17,7 +15,7 @@ interface ModelingSecondaryPanelProps {
 }
 
 const ModelingSecondaryPanel: React.FC<ModelingSecondaryPanelProps> = ({
-    state, dispatch, sqlQuery, executeQuery, availableFields, fieldGroups, onPreviewTable
+    state, dispatch, onPreviewTable
 }) => {
     const { discoveredTables, modelConfiguration, modelingSecondaryPanelTab } = state;
 
@@ -40,11 +38,11 @@ const ModelingSecondaryPanel: React.FC<ModelingSecondaryPanelProps> = ({
     );
 
     return (
-        <aside className="w-80 h-full bg-card border-l-2 border-border flex flex-col shadow-brutal-left flex-shrink-0">
+        <aside className="w-80 h-full bg-card border-r-2 border-border flex flex-col shadow-brutal flex-shrink-0">
             <div className="flex-shrink-0 border-b-2 border-border">
                 <div className="flex" role="tablist">
-                    <TabButton tab="data">Data</TabButton>
-                    <TabButton tab="groups">Groups</TabButton>
+                    <TabButton tab="data">Structure</TabButton>
+                    <TabButton tab="metrics">Metrics</TabButton>
                 </div>
             </div>
 
@@ -58,24 +56,19 @@ const ModelingSecondaryPanel: React.FC<ModelingSecondaryPanelProps> = ({
                         fieldAliases={state.fieldAliases}
                     />
                 )}
-                {modelingSecondaryPanelTab === 'groups' && (
-                    <FieldGroupingPanel
-                        groups={fieldGroups}
-                        setGroups={(groups) => {
-                            const newGroups = typeof groups === 'function' ? groups(state.fieldGroups) : groups;
-                            dispatch({ type: ActionType.SET_FIELD_GROUPS, payload: newGroups });
-                        }}
-                        allFields={availableFields}
-                    />
+                {modelingSecondaryPanelTab === 'metrics' && (
+                    <div className="h-full flex flex-col p-6 items-center justify-center text-center space-y-4">
+                        <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center text-primary border-4 border-primary">
+                            <span className="text-2xl font-bold">∑</span>
+                        </div>
+                        <h3 className="text-lg font-bold font-mono">Calculated Metrics</h3>
+                        <p className="text-xs text-muted-foreground">
+                            Define cross-table formulas and business KPIs that will grow your analysis power.
+                        </p>
+                        <button className="brutal-button w-full py-2 bg-primary text-black font-bold">ADD NEW METRIC</button>
+                    </div>
                 )}
             </div>
-            {modelingSecondaryPanelTab === 'data' && (
-                <SqlEditorPanel
-                    sqlQuery={sqlQuery}
-                    onSqlQueryChange={(query) => dispatch({ type: ActionType.UPDATE_SQL_QUERY, payload: query })}
-                    executeQuery={executeQuery}
-                />
-            )}
         </aside>
     );
 };

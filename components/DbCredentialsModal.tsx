@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { toast } from 'react-hot-toast';
+import { Toast, toast } from 'react-hot-toast'; // Import Toast type check? No, toast is value.
 import { XIcon, SpinnerIcon } from './icons';
 import { DatabaseType, AthenaCredentials, SupabaseCredentials } from '../types';
 
@@ -9,7 +9,8 @@ const DEFAULT_SUPABASE_ANON_KEY = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY 
 
 interface DbCredentialsModalProps {
   onClose: () => void;
-  onSave: (dbType: DatabaseType, creds: AthenaCredentials | SupabaseCredentials | null) => void;
+  onSave: (dbType: DatabaseType, creds: AthenaCredentials | SupabaseCredentials | null) => Promise<void> | void;
+  onTest: (dbType: DatabaseType, creds: AthenaCredentials | SupabaseCredentials | null) => Promise<void> | void;
   initialCreds: AthenaCredentials | null;
   initialDbType: DatabaseType;
   initialSupabaseCreds?: SupabaseCredentials | null;
@@ -18,17 +19,15 @@ interface DbCredentialsModalProps {
 const DbCredentialsModal: React.FC<DbCredentialsModalProps> = ({
   onClose,
   onSave,
+  onTest,
   initialCreds,
   initialDbType,
   initialSupabaseCreds
 }) => {
-  const [dbType, setDbType] = useState<DatabaseType>(initialDbType);
-  const [athenaCreds, setAthenaCreds] = useState<AthenaCredentials>(initialCreds || {
-    awsAccessKeyId: '',
-    awsSecretAccessKey: '',
-    awsRegion: '',
-    s3OutputLocation: ''
-  });
+  // Default to supabase if passed in type is athena (legacy cleanup)
+  const [dbType, setDbType] = useState<DatabaseType>(initialDbType === 'athena' ? 'supabase' : initialDbType);
+
+  // Keep supabase creds in state
   const [supabaseCreds, setSupabaseCreds] = useState<SupabaseCredentials>(initialSupabaseCreds || {
     url: DEFAULT_SUPABASE_URL,
     anonKey: DEFAULT_SUPABASE_ANON_KEY
@@ -47,14 +46,6 @@ const DbCredentialsModal: React.FC<DbCredentialsModalProps> = ({
     };
   }, [onClose]);
 
-  const handleAthenaCredChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setAthenaCreds({ ...athenaCreds, [e.target.name]: e.target.value });
-  };
-
-  const handleSupabaseCredChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSupabaseCreds({ ...supabaseCreds, [e.target.name]: e.target.value });
-  };
-
   const handleTestConnection = async (e: React.FormEvent) => {
     e.preventDefault();
     if (dbType === 'sqlite') {
@@ -62,20 +53,26 @@ const DbCredentialsModal: React.FC<DbCredentialsModalProps> = ({
       return;
     }
     setIsConnecting(true);
-    if (dbType === 'supabase') {
-      await onSave(dbType, supabaseCreds);
-    } else {
-      await onSave(dbType, athenaCreds);
+    try {
+      if (onTest) {
+        await onTest(dbType, supabaseCreds);
+      }
+    } catch (error) {
+      console.error("Connection test failed", error);
+    } finally {
+      setIsConnecting(false);
     }
-    setIsConnecting(false);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (dbType === 'athena') {
-      onSave(dbType, athenaCreds);
-    } else if (dbType === 'supabase') {
-      onSave(dbType, supabaseCreds);
+    if (dbType === 'supabase') {
+      setIsConnecting(true);
+      try {
+        await onSave(dbType, supabaseCreds);
+      } finally {
+        setIsConnecting(false);
+      }
     } else {
       onSave(dbType, null);
     }
@@ -83,66 +80,40 @@ const DbCredentialsModal: React.FC<DbCredentialsModalProps> = ({
 
   const renderCredentialsForm = () => {
     if (dbType === 'supabase') {
-      const isEnvKey = !!import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
       return (
         <div className="grid grid-cols-1 gap-4">
-          <div className="p-3 bg-accent/20 border-2 border-accent text-sm text-accent-foreground">
-            <strong>DVD Rental Database</strong>
-            <p className="text-xs mt-1 text-muted-foreground">
-              Connect to the uploaded DVD Rental dataset with 15 tables including actors, films, customers, rentals, and payments.
-            </p>
+          <div className="p-3 bg-primary/10 border-2 border-primary text-sm text-primary-foreground flex justify-between items-center">
+            <div>
+              <strong className="font-mono uppercase tracking-tighter">Managed Connection</strong>
+              <p className="text-[10px] mt-1 text-muted-foreground uppercase">
+                Enterprise credentials pre-configured & secured.
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-[10px] font-black bg-primary text-primary-foreground px-2 py-0.5">ENCRYPTED 🔒</span>
+            </div>
           </div>
           <div>
-            <label htmlFor="url" className="block text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wide">HOSTNAME</label>
+            <label htmlFor="url" className="block text-sm font-black text-muted-foreground mb-1 uppercase tracking-widest font-mono">HOSTNAME</label>
             <input
-              type="password"
+              type="text"
               id="url"
               name="url"
-              value={supabaseCreds.url}
-              onChange={handleSupabaseCredChange}
-              className="brutal-input w-full"
-              placeholder="https://your-project.supabase.co"
+              value="db.neuronlink.cloud.internal"
+              readOnly
+              className="brutal-input w-full bg-muted text-muted-foreground cursor-not-allowed font-mono opacity-80"
             />
           </div>
           <div>
-            <label htmlFor="anonKey" className="block text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wide">PASSWORD</label>
-            {isEnvKey ? (
-              <div className="flex items-center space-x-2 p-2 bg-muted border border-border">
-                <span className="text-green-500 font-mono text-xs">✓ Loaded from .env (PASSWORD)</span>
-              </div>
-            ) : (
-              <input
-                type="password"
-                id="anonKey"
-                name="anonKey"
-                value={supabaseCreds.anonKey}
-                onChange={handleSupabaseCredChange}
-                className="brutal-input w-full"
-              />
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    if (dbType === 'athena') {
-      return (
-        <div className="grid grid-cols-1 gap-4">
-          <div>
-            <label htmlFor="awsAccessKeyId" className="block text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wide">AWS Access Key ID</label>
-            <input type="text" id="awsAccessKeyId" name="awsAccessKeyId" value={athenaCreds.awsAccessKeyId} onChange={handleAthenaCredChange} className="brutal-input w-full" />
-          </div>
-          <div>
-            <label htmlFor="awsSecretAccessKey" className="block text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wide">AWS Secret Access Key</label>
-            <input type="password" id="awsSecretAccessKey" name="awsSecretAccessKey" value={athenaCreds.awsSecretAccessKey} onChange={handleAthenaCredChange} className="brutal-input w-full" />
-          </div>
-          <div>
-            <label htmlFor="awsRegion" className="block text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wide">AWS Region</label>
-            <input type="text" id="awsRegion" name="awsRegion" value={athenaCreds.awsRegion} onChange={handleAthenaCredChange} placeholder="e.g., us-east-1" className="brutal-input w-full" />
-          </div>
-          <div>
-            <label htmlFor="s3OutputLocation" className="block text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wide">S3 Staging Directory</label>
-            <input type="text" id="s3OutputLocation" name="s3OutputLocation" value={athenaCreds.s3OutputLocation} onChange={handleAthenaCredChange} placeholder="s3://your-athena-results-bucket/" className="brutal-input w-full" />
+            <label htmlFor="anonKey" className="block text-sm font-black text-muted-foreground mb-1 uppercase tracking-widest font-mono">ACCESS KEY</label>
+            <input
+              type="password"
+              id="anonKey"
+              name="anonKey"
+              value="••••••••••••••••••••••••••••••••••••••••••••••••"
+              readOnly
+              className="brutal-input w-full bg-muted text-muted-foreground cursor-not-allowed font-mono opacity-80"
+            />
           </div>
         </div>
       );
@@ -157,14 +128,14 @@ const DbCredentialsModal: React.FC<DbCredentialsModalProps> = ({
 
   return (
     <div
-      className="brutal-overlay"
+      className="brutal-overlay z-[100]"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-labelledby="db-creds-title"
     >
       <div
-        className="bg-card border-2 border-border shadow-brutal-xl w-full max-w-md flex flex-col m-4"
+        className="bg-card border-2 border-border shadow-brutal-xl w-full max-w-md flex flex-col m-4 animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center p-4 border-b-2 border-border">
@@ -186,7 +157,6 @@ const DbCredentialsModal: React.FC<DbCredentialsModalProps> = ({
               <label htmlFor="db-type" className="block text-sm font-medium text-muted-foreground mb-1 uppercase tracking-wide">Database Type</label>
               <select id="db-type" value={dbType} onChange={e => setDbType(e.target.value as DatabaseType)} className="brutal-select w-full">
                 <option value="supabase">LIVE Postgres</option>
-                <option value="athena">Athena (Lakehouse)</option>
                 <option value="sqlite">SQLite (In-Browser Demo)</option>
               </select>
             </div>
@@ -198,7 +168,7 @@ const DbCredentialsModal: React.FC<DbCredentialsModalProps> = ({
               type="button"
               onClick={handleTestConnection}
               disabled={isConnecting}
-              className="brutal-button-secondary text-xs flex items-center disabled:opacity-50"
+              className="brutal-button-secondary text-xs flex items-center disabled:opacity-50 min-w-[120px] justify-center"
             >
               {isConnecting && <SpinnerIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />}
               Test Connection
@@ -214,8 +184,9 @@ const DbCredentialsModal: React.FC<DbCredentialsModalProps> = ({
               <button
                 type="submit"
                 disabled={isConnecting}
-                className="brutal-button-primary text-xs disabled:opacity-50"
+                className="brutal-button-primary text-xs disabled:opacity-50 flex items-center"
               >
+                {isConnecting && <SpinnerIcon className="animate-spin -ml-1 mr-2 h-4 w-4" />}
                 Save & Connect
               </button>
             </div>

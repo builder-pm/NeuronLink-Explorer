@@ -1,40 +1,38 @@
 import React from 'react';
-import { FieldsIcon, DatabaseIcon, GithubIcon } from './icons';
+import { GithubIcon, LogoutIcon, UserIcon, CogIcon, TableIcon } from './icons';
 import { PanelType } from '../types';
 import { useAppDispatch, useAppState } from '../state/context';
 import { ActionType } from '../state/actions';
 
 interface HeaderProps {
-  onSaveConfig: () => void;
   activePanel: PanelType;
   onTogglePanel: (panel: PanelType) => void;
-  onLoadConfig: () => void;
   configName: string;
   onConfigNameChange: (name: string) => void;
   isGuest?: boolean;
   onSignIn?: () => void;
+  onSignOut?: () => void;
+  user?: any;
 }
 
 const Header: React.FC<HeaderProps> = (props) => {
   const {
-    onSaveConfig, activePanel,
-    onTogglePanel, onLoadConfig,
+    activePanel,
+    onTogglePanel,
     configName, onConfigNameChange,
-    isGuest, onSignIn
+    isGuest, onSignIn, onSignOut, user
   } = props;
   const { currentView } = useAppState();
   const dispatch = useAppDispatch();
 
-  const handlePanelToggle = (panel: PanelType) => {
-    const targetView = panel === 'db-config' ? 'modeling' : 'analysis';
-    if (currentView !== targetView) {
-      dispatch({ type: ActionType.SET_VIEW, payload: targetView });
-    }
-    onTogglePanel(panel);
+  const toggleView = () => {
+    const targetView = currentView === 'analysis' ? 'modeling' : 'analysis';
+    dispatch({ type: ActionType.SET_VIEW, payload: targetView });
   }
 
   return (
     <header className="bg-card border-b-2 border-border shadow-brutal z-10 flex-shrink-0">
+      {/* Top Row: Logo & Global Actions */}
       <div className="flex items-center justify-between px-4 py-2 bg-card border-b-2 border-border">
         <div className="flex items-center space-x-4">
           <a
@@ -53,35 +51,14 @@ const Header: React.FC<HeaderProps> = (props) => {
             </div>
           )}
         </div>
+
+        {/* Right Side: Links & Auth */}
         <div className="flex items-center space-x-2">
-          {isGuest && (
-            <button
-              onClick={onSignIn}
-              className="px-3 py-1 bg-primary text-primary-foreground border-2 border-border text-[11px] font-bold uppercase shadow-brutal-xs hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all mr-4"
-            >
-              Sign In to Unlock
-            </button>
-          )}
-          <button
-            onClick={() => handlePanelToggle('fields')}
-            title="Table View"
-            aria-label="Toggle table view panel"
-            className={`p-2 border-2 border-border transition-colors ${activePanel === 'fields' && currentView === 'analysis' ? 'bg-primary text-primary-foreground shadow-brutal' : 'hover:bg-accent hover:text-accent-foreground text-foreground'}`}>
-            <FieldsIcon className="h-5 w-5" />
-          </button>
-          <button
-            onClick={() => handlePanelToggle('db-config')}
-            title="Database Configuration"
-            aria-label="Toggle database configuration panel"
-            className={`p-2 border-2 border-border transition-colors ${currentView === 'modeling' ? 'bg-primary text-primary-foreground shadow-brutal' : 'hover:bg-accent hover:text-accent-foreground text-foreground'}`}>
-            <DatabaseIcon className="h-5 w-5" />
-          </button>
-          <div className="border-l-2 border-border h-6 mx-1"></div>
           <a
             href="https://github.com/builder-pm/neuronlink-explorer"
             target="_blank"
             rel="noopener noreferrer"
-            title="see source code"
+            title="Source Code"
             className="p-2 border-2 border-border hover:bg-accent hover:text-accent-foreground transition-all hover:shadow-brutal-xs flex items-center justify-center"
           >
             <GithubIcon className="h-5 w-5" />
@@ -90,13 +67,48 @@ const Header: React.FC<HeaderProps> = (props) => {
             href="https://namankansal.in"
             target="_blank"
             rel="noopener noreferrer"
-            title="Connect with me"
+            title="Contact"
             className="p-2 border-2 border-border hover:bg-accent transition-all hover:shadow-brutal-xs flex items-center justify-center bg-card"
           >
             <img src="/naman-favicon.svg" alt="Portfolio" className="h-5 w-5 object-contain" />
           </a>
+
+          <div className="border-l-2 border-border h-6 mx-2"></div>
+
+          {/* Auth Section */}
+          {user ? (
+            <div className="flex items-center space-x-3 px-3 py-1 border-2 border-border bg-card">
+              <div className="flex items-center space-x-2">
+                {user.user_metadata?.avatar_url ? (
+                  <img src={user.user_metadata.avatar_url} alt="Avatar" className="h-6 w-6 rounded-full border border-border" />
+                ) : (
+                  <UserIcon className="h-5 w-5 text-muted-foreground" />
+                )}
+                <span className="text-xs font-bold uppercase tracking-wide max-w-[150px] truncate">
+                  {user.user_metadata?.full_name || user.email || 'User'}
+                </span>
+              </div>
+              <button
+                onClick={onSignOut}
+                title="Sign Out"
+                className="text-muted-foreground hover:text-destructive transition-colors"
+                aria-label="Sign out"
+              >
+                <LogoutIcon className="h-5 w-5" />
+              </button>
+            </div>
+          ) : isGuest ? (
+            <button
+              onClick={onSignIn}
+              className="px-3 py-1 bg-primary text-primary-foreground border-2 border-border text-[11px] font-bold uppercase shadow-brutal-xs hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all"
+            >
+              Sign In
+            </button>
+          ) : null}
         </div>
       </div>
+
+      {/* Bottom Row: Context & View Toggle */}
       <div className="flex items-center justify-between px-4 py-2 bg-card">
         <div className="flex items-center space-x-4">
           <label htmlFor="configNameInput" className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Name *</label>
@@ -105,17 +117,30 @@ const Header: React.FC<HeaderProps> = (props) => {
             id="configNameInput"
             value={configName}
             onChange={(e) => onConfigNameChange(e.target.value)}
-            className="brutal-input text-lg text-primary font-semibold bg-transparent px-1"
+            className="brutal-input text-lg text-primary font-semibold bg-transparent px-1 min-w-[300px]"
             aria-required="true"
           />
         </div>
-        <div className="flex items-center space-x-4">
-          <button onClick={onLoadConfig} className="brutal-button-secondary text-xs">
-            <span aria-hidden="true" className="mr-1">&#8593;</span> Load Config
-          </button>
-          <button onClick={onSaveConfig} className="brutal-button-secondary text-xs">
-            <span aria-hidden="true" className="mr-1">&#8595;</span> Save Config
-          </button>
+
+        {/* Context-Aware Navigation Button */}
+        <div>
+          {currentView === 'analysis' ? (
+            <button
+              onClick={toggleView}
+              className="group flex items-center space-x-2 px-3 py-1.5 border-2 border-transparent text-muted-foreground hover:text-foreground transition-all hover:bg-muted/50"
+              title="Go to Database Configuration"
+            >
+              <CogIcon className="h-5 w-5 group-hover:rotate-90 transition-transform duration-500" />
+            </button>
+          ) : (
+            <button
+              onClick={toggleView}
+              className="flex items-center space-x-2 px-3 py-1.5 border-2 border-transparent text-muted-foreground hover:text-foreground transition-all hover:bg-muted/50"
+              title="Back to Table View"
+            >
+              <TableIcon className="h-5 w-5" />
+            </button>
+          )}
         </div>
       </div>
     </header>

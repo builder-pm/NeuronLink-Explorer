@@ -34,10 +34,21 @@ export interface ChatMessage {
     role: 'user' | 'model';
     text: string;
     isLoading?: boolean;
+    suggestAction?: AIAction;
 }
 
+export interface ChatThread {
+    id: string;
+    user_id: string;
+    title: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export type MessageRole = 'user' | 'model';
+
 export interface AIAction {
-    action: 'pivot' | 'filter' | 'query' | 'propose_model' | 'propose_analysis';
+    action: 'pivot' | 'filter' | 'query' | 'propose_model' | 'propose_analysis' | 'suggest_fields';
     config?: Partial<PivotConfig> | Filter;
     query?: string;
     thought?: string;
@@ -50,6 +61,10 @@ export interface AIAction {
         pivotConfig: PivotConfig;
         filters: Filter[];
     };
+    // Phase 7: Field suggestion payload
+    suggestedFields?: Array<{ table: string; fields: string[] }>;
+    suggestedJoins?: Join[];
+    reason?: string;
 }
 
 export interface SemanticContext {
@@ -58,7 +73,11 @@ export interface SemanticContext {
     modelConfiguration: ModelConfiguration;
     joins: Join[];
     fieldAliases: FieldAliases;
-    // We can compute available fields from modelConfiguration on the fly
+    // Phase 7: Extended context for AI
+    fieldMetadata?: Record<string, FieldMetadata>;
+    sampleValues?: Record<string, string[]>;
+    schemaRegistry?: SchemaRegistryEntry | null;
+    metrics?: Metric[];
 }
 
 export interface Join {
@@ -184,6 +203,10 @@ export interface AppState {
 
     // User/Auth
     currentUser: User | null;
+    isAiLoading: boolean;
+    chatMessages: ChatMessage[];
+    currentThreadId: string | null;
+    chatThreads: ChatThread[];
 }
 
 export interface User {
@@ -278,39 +301,39 @@ export interface ModelConfigurationV2 {
     metrics: Metric[];
     contextFields: ModelContextField[]; // Fields explicitly scanned for AI
 
-        globalFilters: Filter[]; // Pre-cooked filters
+    globalFilters: Filter[]; // Pre-cooked filters
 
-    }
+}
 
-    
 
-    export interface Configuration {
 
-        id: string;
+export interface Configuration {
 
-        user_id?: string;
+    id: string;
 
-        name: string;
+    user_id?: string;
 
-        description?: string;
+    name: string;
 
-        type: 'db_config' | 'analysis_config';
+    description?: string;
 
-        config: any; // Using any for flexibility to store Partial<AppState> keys
+    type: 'db_config' | 'analysis_config';
 
-        is_public: boolean;
+    config: any; // Using any for flexibility to store Partial<AppState> keys
 
-        created_at?: string;
+    is_public: boolean;
 
-        updated_at?: string;
+    created_at?: string;
 
-    }
+    updated_at?: string;
 
-    
+}
 
-    // --- Schema Registry Types ---
 
-    
+
+// --- Schema Registry Types ---
+
+
 
 export interface RegisteredColumn {
     name: string;
@@ -324,30 +347,29 @@ export interface RegisteredColumn {
     };
 }
 
-    
 
-    export interface RegisteredTable {
 
-        name: string;
+export interface RegisteredTable {
 
-        columns: RegisteredColumn[];
+    name: string;
 
-        description?: string;
+    columns: RegisteredColumn[];
 
-    }
+    description?: string;
 
-    
+}
 
-    export interface SchemaRegistryEntry {
 
-        dbUrlHash: string;
 
-        tables: RegisteredTable[];
+export interface SchemaRegistryEntry {
 
-        schemaHash: string;
+    dbUrlHash: string;
 
-        lastSyncedAt: string;
+    tables: RegisteredTable[];
 
-    }
+    schemaHash: string;
 
-    
+    lastSyncedAt: string;
+
+}
+

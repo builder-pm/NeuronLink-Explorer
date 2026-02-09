@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
-import { ChevronDownIcon, DatabaseIcon, SearchIcon, SpinnerIcon, RefreshIcon } from './icons';
+import { ChevronDownIcon, DatabaseIcon, SearchIcon, SpinnerIcon, RefreshIcon, SettingsIcon, PlusIcon, FolderIcon } from './icons';
+import ConfigManagerModal from './ConfigManagerModal';
+import SaveConfigModal from './SaveConfigModal';
 import { useAppState } from '../state/context';
 import { DatabaseType, FieldAliases } from '../types';
 import { ActionType, AppAction } from '../state/actions';
+import { prettifyFieldName } from '../utils/stringUtils';
 
 interface DbConfigPanelProps {
     selectedFields: string[];
@@ -68,19 +71,17 @@ const ConnectionButton: React.FC<{
 };
 
 const ConnectionStatusIndicator: React.FC<{ dbType: DatabaseType; isConnecting: boolean; isConnected: boolean }> = ({ dbType, isConnecting, isConnected }) => {
-    let statusClass = 'bg-muted-foreground';
-    let statusTitle = 'Disconnected';
-    if (dbType === 'sqlite') {
-        statusTitle = 'Using In-Browser SQLite';
-        statusClass = 'bg-primary';
-    } else if (isConnecting) {
-        return <SpinnerIcon className="h-4 w-4 text-primary animate-spin" />;
-    } else if (isConnected) {
-        statusClass = 'bg-primary';
-        statusTitle = 'Connected to Lakehouse';
-    }
+    if (isConnecting) return <SpinnerIcon className="h-4 w-4 text-primary animate-spin" />;
 
-    return <div className={`h-3 w-3 rounded-full ${statusClass}`} title={statusTitle} />;
+    return (
+        <div
+            className={`badge-brutal ${isConnected || dbType === 'sqlite' ? 'badge-brutal-success' : 'badge-brutal-error'}`}
+            title={isConnected ? 'Connected to Lakehouse' : 'Disconnected'}
+        >
+            <div className={`h-2 w-2 rounded-full ${isConnected || dbType === 'sqlite' ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className="text-[10px] font-black">{isConnected || dbType === 'sqlite' ? 'LIVE' : 'OFFLINE'}</span>
+        </div>
+    );
 };
 
 const DemoModeToggle: React.FC<{ dbType: DatabaseType; isDemoMode: boolean; onToggle: () => void }> = ({ dbType, isDemoMode, onToggle }) => {
@@ -127,9 +128,9 @@ const FieldsList: React.FC<{
     }
     return (
         <div className="pl-2 space-y-1 mt-1 max-h-64 overflow-y-auto">
-            {isModelDirty && availableFields.length > 0 && (
-                <div className="px-2 py-1 mb-2 bg-yellow-500/10 border-l-2 border-yellow-500">
-                    <p className="text-[10px] text-yellow-500 uppercase font-bold">Unconfirmed Changes</p>
+            {isModelDirty && (
+                <div className="px-2 py-1.5 mb-2 bg-primary/10 border-l-4 border-primary">
+                    <span className="dirty-indicator">Unconfirmed Graph Changes</span>
                 </div>
             )}
             {filteredFields.map(field => {
@@ -144,7 +145,7 @@ const FieldsList: React.FC<{
                         />
                         <div className="flex flex-col">
                             <span className={`text-sm ${alias ? 'text-primary font-bold' : 'text-foreground'} group-hover:text-primary transition-colors`}>
-                                {(alias || field).replace(/_/g, ' ')}
+                                {alias || prettifyFieldName(field)}
                             </span>
                             {alias && (
                                 <span className="text-[10px] text-muted-foreground italic leading-tight">
@@ -175,6 +176,8 @@ const DbConfigPanel: React.FC<DbConfigPanelProps> = ({
 }) => {
     const { isModelDirty } = useAppState();
     const [searchTerm, setSearchTerm] = useState('');
+    const [isConfigManagerOpen, setIsConfigManagerOpen] = useState(false);
+    const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
 
     const [localSelectedFields, setLocalSelectedFields] = useState<string[]>(selectedFields);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -298,7 +301,54 @@ const DbConfigPanel: React.FC<DbConfigPanelProps> = ({
                     />
                 </details>
             </div>
-        </aside>
+
+            <div className="p-4 bg-muted/30 border-t-2 border-border flex gap-2">
+                <button
+                    onClick={() => setIsConfigManagerOpen(true)}
+                    className="flex-1 brutal-button-secondary py-2 px-3 text-xs flex items-center justify-center gap-2"
+                >
+                    <FolderIcon className="h-4 w-4" /> Load
+                </button>
+                <button
+                    onClick={() => setIsSaveModalOpen(true)}
+                    className="flex-1 brutal-button-primary py-2 px-3 text-xs flex items-center justify-center gap-2"
+                >
+                    <PlusIcon className="h-4 w-4" /> Save
+                </button>
+            </div>
+
+            <ConfigManagerModal
+                isOpen={isConfigManagerOpen}
+                onClose={() => setIsConfigManagerOpen(false)}
+                type="db_config"
+                onLoad={(config, name) => {
+                    dispatch({ type: ActionType.LOAD_CONFIG, payload: config });
+                    dispatch({ type: ActionType.SET_CONFIG_NAME, payload: name });
+                    setIsConfigManagerOpen(false);
+                }}
+                userId={useAppState().currentUser?.id}
+            />
+
+            <SaveConfigModal
+                isOpen={isSaveModalOpen}
+                onClose={() => setIsSaveModalOpen(false)}
+                type="db_config"
+                configData={{
+                    selectedFields,
+                    // Note: We use useAppState within the component render to get latest values
+                    modelConfiguration: useAppState().modelConfiguration,
+                    confirmedModelConfiguration: useAppState().confirmedModelConfiguration,
+                    joins: useAppState().joins,
+                    tablePositions: useAppState().tablePositions,
+                    fieldGroups: useAppState().fieldGroups,
+                    fieldAliases: fieldAliases
+                }}
+                onSaveSuccess={(name) => {
+                    dispatch({ type: ActionType.SET_CONFIG_NAME, payload: name });
+                    setIsSaveModalOpen(false);
+                }}
+            />
+        </aside >
     );
 };
 

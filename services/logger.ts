@@ -14,7 +14,8 @@ export type EventType =
     | 'PIVOT_UPDATE'
     | 'FILTER_ADD'
     | 'MODEL_UPDATE'
-    | 'CONFIG_SAVE';
+    | 'CONFIG_SAVE'
+    | 'SCHEMA_DRIFT';
 
 /**
  * Log a user event to the neuronlink_analytics.user_events table.

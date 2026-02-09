@@ -271,12 +271,48 @@ const FixedRightPanel = ({ state, dispatch, onPreviewTable, previewData, onClear
     onCloseRowViewer?: () => void
 }) => {
     const [activeTab, setActiveTab] = useState<'structure' | 'preview' | 'metrics'>('structure');
+    const [isScanningAll, setIsScanningAll] = useState(false);
+    const [scanProgress, setScanProgress] = useState<{ current: number; total: number; label: string } | undefined>(undefined);
 
     const allFields = useMemo(() => {
         return Object.entries(state.modelConfiguration).flatMap(([tableName, fields]) =>
             fields.map(field => `${tableName}.${field}`)
         );
     }, [state.modelConfiguration]);
+
+    const handleScanAll = async () => {
+        if (allFields.length === 0) {
+            toast.error('No fields in model to scan.');
+            return;
+        }
+
+        setIsScanningAll(true);
+        const total = allFields.length;
+        const toastId = 'scanning-all-fields-master';
+
+        try {
+            for (let i = 0; i < total; i++) {
+                const fieldKey = allFields[i];
+                const [tableName, fieldName] = fieldKey.split('.');
+
+                setScanProgress({ current: i + 1, total, label: `${tableName}.${fieldName}` });
+                toast.loading(`Scanning ${i + 1}/${total}: ${fieldName}...`, { id: toastId });
+
+                const values = await db.fetchSampleValues(tableName, fieldName);
+                dispatch({
+                    type: ActionType.SET_SAMPLE_VALUES,
+                    payload: { fieldKey, values }
+                });
+            }
+            toast.success(`Successfully scanned ${total} fields!`, { id: toastId });
+        } catch (e) {
+            console.error('Scan all failed:', e);
+            toast.error('Scan interrupted due to an error.', { id: toastId });
+        } finally {
+            setIsScanningAll(false);
+            setScanProgress(undefined);
+        }
+    };
 
     // Show Row Viewer when active and row is selected
     if (isRowViewerActive && selectedRow && selectedRowColumns && selectedRowColumns.length > 0) {
@@ -359,6 +395,9 @@ const FixedRightPanel = ({ state, dispatch, onPreviewTable, previewData, onClear
                                     payload: { fieldKey, values }
                                 });
                             }}
+                            onScanAll={handleScanAll}
+                            isScanningAll={isScanningAll}
+                            scanProgress={scanProgress}
                         />
                     </div>
                 )}

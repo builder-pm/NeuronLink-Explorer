@@ -9,13 +9,35 @@ export const init = async (empty = false) => {
     const SQL = await initSqlJs({
         locateFile: (file: string) => `https://esm.sh/sql.js@1.10.3/dist/${file}`
     });
-    db = new SQL.Database();
+    
+    // If db already exists and we want an empty one, we should probably close/clear it
+    if (db && empty) {
+        db.close();
+        db = new SQL.Database();
+    } else if (!db) {
+        db = new SQL.Database();
+    }
     
     // Create tables with initial data only if not in empty mode
     if (!empty) {
+        // Clear any existing tables just in case
+        const existingTablesResult = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
+        if (existingTablesResult.length > 0 && existingTablesResult[0].values.length > 0) {
+            existingTablesResult[0].values.forEach((row: any) => {
+                db.run(`DROP TABLE IF EXISTS "${row[0]}"`);
+            });
+        }
         createTable('jobs', JOBS_DATA);
         createTable('countries', COUNTRIES_DATA);
         createTable('sources', SOURCES_DATA);
+    } else if (empty) {
+        // Ensure it's truly empty
+        const existingTablesResult = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';");
+        if (existingTablesResult.length > 0 && existingTablesResult[0].values.length > 0) {
+            existingTablesResult[0].values.forEach((row: any) => {
+                db.run(`DROP TABLE IF EXISTS "${row[0]}"`);
+            });
+        }
     }
 };
 
@@ -118,23 +140,6 @@ export const fetchSampleValues = async (tableName: string, fieldName: string): P
         return results.map(row => String(row[fieldName]));
     } catch (e) {
         console.error(`Failed to fetch sample values for ${tableName}.${fieldName}:`, e);
-        throw e;
-    }
-};
-
-/**
- * Fetches top 50 distinct non-null sample values for a field.
- * Works with SQLite (local) database.
- */
-export const fetchSampleValues = async (tableName: string, fieldName: string): Promise<string[]> => {
-    if (!db) throw new Error("Database not initialized.");
-
-    try {
-        const query = `SELECT DISTINCT "${fieldName}" FROM "${tableName}" WHERE "${fieldName}" IS NOT NULL LIMIT 50;`;
-        const results = await executeQuery(query);
-        return results.map(row => String(row[fieldName]));
-    } catch (e) {
-        console.error(`Error fetching sample values for ${tableName}.${fieldName}:`, e);
         throw e;
     }
 };

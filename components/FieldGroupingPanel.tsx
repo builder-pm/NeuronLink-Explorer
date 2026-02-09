@@ -14,9 +14,11 @@ import {
     CalendarIcon,
     KeyIcon,
     SettingsIcon,
-    EditIcon
+    EditIcon,
+    RefreshIcon
 } from './icons';
 import { FieldGroups, ItemTypes, FieldAliases, FieldMetadata, SemanticDataType } from '../types';
+import { prettifyFieldName, getTableName } from '../utils/stringUtils';
 
 interface FieldGroupingPanelProps {
     groups: FieldGroups;
@@ -30,6 +32,9 @@ interface FieldGroupingPanelProps {
     onFieldVisibilityToggle: (fieldKey: string, isHidden: boolean) => void;
     onMetadataChange: (fieldKey: string, metadata: Partial<FieldMetadata>) => void;
     onScanValues: (fieldKey: string) => Promise<void>;
+    onScanAll: () => Promise<void>;
+    isScanningAll?: boolean;
+    scanProgress?: { current: number; total: number; label: string };
     allFields: string[];
 }
 
@@ -143,11 +148,18 @@ const DraggableField: React.FC<DraggableFieldProps> = ({
                             className="w-full px-1 py-0.5 text-sm bg-background border border-primary outline-none text-foreground"
                         />
                     ) : (
-                        <span
-                            className={`truncate block ${isHidden ? 'line-through text-muted-foreground opacity-60' : 'text-foreground'}`}
-                        >
-                            {displayName}
-                        </span>
+                        <div className="flex flex-col py-0.5">
+                            <span
+                                className={`truncate block font-medium ${isHidden ? 'line-through text-muted-foreground opacity-60' : 'text-foreground'}`}
+                            >
+                                {displayName}
+                            </span>
+                            {fieldName.includes('.') && (
+                                <span className="text-[9px] text-muted-foreground/50 uppercase tracking-tighter truncate leading-none">
+                                    {getTableName(fieldName)} <span className="mx-0.5 opacity-30">•</span> {fieldName.split('.')[1]}
+                                </span>
+                            )}
+                        </div>
                     )}
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover/field:opacity-100 transition-opacity">
@@ -354,7 +366,7 @@ const GroupDropZone: React.FC<DraggableGroupProps> = ({
                                 fieldName={field}
                                 groupName={groupName}
                                 fieldIndex={index}
-                                displayName={fieldAliases[field] || field}
+                                displayName={fieldAliases[field] || prettifyFieldName(field)}
                                 isHidden={hiddenFields.has(field)}
                                 metadata={fieldMetadata[field]}
                                 sampleValues={sampleValues[field]}
@@ -390,6 +402,9 @@ const FieldGroupingPanel: React.FC<FieldGroupingPanelProps> = ({
     onFieldVisibilityToggle,
     onMetadataChange,
     onScanValues,
+    onScanAll,
+    isScanningAll,
+    scanProgress,
     allFields
 }) => {
     const [newGroupName, setNewGroupName] = useState('');
@@ -508,20 +523,46 @@ const FieldGroupingPanel: React.FC<FieldGroupingPanelProps> = ({
     ];
 
     return (
-        <div className="w-full h-full flex flex-col bg-card">
+        <div className="w-full h-full flex flex-col bg-card relative">
+            {/* Progress Overlay */}
+            {isScanningAll && scanProgress && (
+                <div className="absolute inset-0 z-[100] bg-background/80 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-full max-w-[200px] space-y-4">
+                        <div className="flex justify-center">
+                            <div className="p-3 bg-primary/10 border-2 border-primary rounded-full">
+                                <RefreshIcon className="h-8 w-8 text-primary animate-spin" />
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <h4 className="text-sm font-black uppercase tracking-widest text-foreground">Scanning Model</h4>
+                            <p className="text-[10px] font-mono text-muted-foreground truncate">{scanProgress.label}</p>
+                        </div>
+                        <div className="w-full bg-muted border-2 border-border h-4 relative">
+                            <div 
+                                className="bg-primary h-full transition-all duration-300" 
+                                style={{ width: `${(scanProgress.current / scanProgress.total) * 100}%` }}
+                            />
+                            <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-black mix-blend-difference">
+                                {scanProgress.current} / {scanProgress.total}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="flex-1 overflow-y-auto scrollbar-thin">
                 <div className="p-4 border-b-2 border-border bg-card">
                     <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-3">Field Groups</h3>
 
-                    <div className="flex items-center gap-2 relative">
+                    <div className="flex items-center gap-1 relative">
                         {/* Template Trigger */}
                         <div className="relative" ref={templateMenuRef}>
                             <button
                                 onClick={() => setShowTemplates(!showTemplates)}
-                                className={`p-2 border-2 border-border transition-all hover:shadow-brutal ${showTemplates ? 'bg-primary text-black' : 'bg-card text-muted-foreground hover:text-primary'}`}
+                                className={`p-1.5 border-2 border-border transition-all hover:shadow-brutal ${showTemplates ? 'bg-primary text-black' : 'bg-card text-muted-foreground hover:text-primary'}`}
                                 title="Auto-populate from templates"
                             >
-                                <WandIcon className="h-4 w-4" />
+                                <WandIcon className="h-3.5 w-3.5" />
                             </button>
 
                             {showTemplates && (
@@ -546,23 +587,33 @@ const FieldGroupingPanel: React.FC<FieldGroupingPanelProps> = ({
                         </div>
 
                         {/* Group Input */}
-                        <div className="flex-1 flex gap-2">
+                        <div className="flex-1 flex gap-1 min-w-0">
                             <input
                                 type="text"
                                 value={newGroupName}
                                 onChange={(e) => setNewGroupName(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && handleAddGroup()}
-                                placeholder="New group name..."
-                                className="brutal-input flex-1 text-sm bg-background h-9"
+                                placeholder="Group..."
+                                className="brutal-input flex-1 text-xs bg-background h-8 min-w-0 px-2"
                             />
                             <button
                                 onClick={handleAddGroup}
-                                className="px-3 bg-primary text-black border-2 border-border hover:shadow-brutal transition-all flex items-center justify-center"
+                                className="px-2 bg-primary text-black border-2 border-border hover:shadow-brutal transition-all flex items-center justify-center shrink-0"
                                 title="Create custom group"
                             >
-                                <PlusIcon className="h-4 w-4" />
+                                <PlusIcon className="h-3.5 w-3.5" />
                             </button>
                         </div>
+
+                        {/* Scan All Button - Moved after add group */}
+                        <button
+                            onClick={onScanAll}
+                            disabled={isScanningAll || allFields.length === 0}
+                            className={`p-1.5 border-2 border-border transition-all hover:shadow-brutal shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${isScanningAll ? 'bg-primary text-black' : 'bg-card text-muted-foreground hover:text-primary'}`}
+                            title="Scan all fields"
+                        >
+                            <RefreshIcon className={`h-3.5 w-3.5 ${isScanningAll ? 'animate-spin' : ''}`} />
+                        </button>
                     </div>
                 </div>
 

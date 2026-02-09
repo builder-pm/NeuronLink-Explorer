@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { format } from 'sql-formatter';
 import { DataRow } from '../../types';
 import { executeQuery } from '../../services/database';
+import { prettifyFieldName } from '../../utils/stringUtils';
 
 interface TableSchema {
     name: string;
@@ -53,16 +54,21 @@ const SQLPanel: React.FC<SQLPanelProps> = ({
         return map;
     }, [tables]);
 
-    // Helper to extract column name from various formats: "table"."col", table.col, col
-    const extractColumnName = (colStr: string): string => {
+    // Helper to parse a column reference like "table"."col" or table.col
+    const parseColumnRef = (colStr: string): { table: string | null; column: string } => {
         const trimmed = colStr.trim();
-        // Match "table"."column" or table.column patterns
-        const dotMatch = trimmed.match(/(?:["']?\w+["']?\.)?["']?(\w+)["']?$/);
-        if (dotMatch) {
-            return dotMatch[1].toLowerCase();
+        // Match "table"."column" pattern
+        const quotedMatch = trimmed.match(/^["']?(\w+)["']?\.["']?(\w+)["']?$/);
+        if (quotedMatch) {
+            return { table: quotedMatch[1].toLowerCase(), column: quotedMatch[2].toLowerCase() };
         }
-        // Just return cleaned version
-        return trimmed.replace(/["']/g, '').toLowerCase();
+        // Match table.column pattern (no quotes)
+        const dotMatch = trimmed.match(/^(\w+)\.(\w+)$/);
+        if (dotMatch) {
+            return { table: dotMatch[1].toLowerCase(), column: dotMatch[2].toLowerCase() };
+        }
+        // Just a column name
+        return { table: null, column: trimmed.replace(/["']/g, '').toLowerCase() };
     };
 
     // Toggle between SELECT * and expanded column names
@@ -71,68 +77,110 @@ const SQLPanel: React.FC<SQLPanelProps> = ({
         setIsColumnsExpanded(newExpanded);
 
         if (newExpanded) {
-            // Expand: Replace SELECT * FROM table with SELECT col1, col2, ... FROM table
+            // Expand: Replace "table".* with individual columns
             let newQuery = sqlQuery;
-            // Match SELECT * FROM "table" or SELECT * FROM table
-            const starPattern = /SELECT\s+\*\s+FROM\s+["']?(\w+)["']?/gi;
-            const matches: { match: string; tableName: string; fullTableRef: string }[] = [];
 
+            // Find all "table".* patterns
+            const tableStarPattern = /["']?(\w+)["']?\.\*/g;
             let m;
-            while ((m = starPattern.exec(sqlQuery)) !== null) {
-                matches.push({ match: m[0], tableName: m[1].toLowerCase(), fullTableRef: m[1] });
+            const tableStars: { match: string; tableName: string }[] = [];
+
+            while ((m = tableStarPattern.exec(sqlQuery)) !== null) {
+                tableStars.push({ match: m[0], tableName: m[1].toLowerCase() });
             }
 
-            matches.forEach(({ match, tableName, fullTableRef }) => {
+            // Replace each table.* with its columns
+            tableStars.forEach(({ match, tableName }) => {
                 const columns = tableSchemaMap[tableName];
                 if (columns && columns.length > 0) {
-                    // Format columns with table prefix and quotes
-                    const columnList = columns.map(c => `"${fullTableRef}"."${c}"`).join(',\n    ');
-                    const replacement = `SELECT\n    ${columnList}\nFROM "${fullTableRef}"`;
-                    newQuery = newQuery.replace(match, replacement);
+                    const columnList = columns.map(c => `"${tableName}"."${c}"`).join(',\n    ');
+                    newQuery = newQuery.replace(match, columnList);
                 }
             });
+
+            // Also handle simple SELECT * FROM table (single table, no joins)
+            const simpleStarPattern = /SELECT\s+\*\s+FROM\s+["']?(\w+)["']?(?!\s*(?:INNER|LEFT|RIGHT|OUTER|CROSS|JOIN))/gi;
+            let simpleMatch;
+            while ((simpleMatch = simpleStarPattern.exec(newQuery)) !== null) {
+                const tableName = simpleMatch[1].toLowerCase();
+                const columns = tableSchemaMap[tableName];
+                if (columns && columns.length > 0) {
+                    const columnList = columns.map(c => `"${simpleMatch[1]}"."${c}"`).join(',\n    ');
+                    const replacement = `SELECT\n    ${columnList}\nFROM "${simpleMatch[1]}"`;
+                    newQuery = newQuery.replace(simpleMatch[0], replacement);
+                }
+            }
 
             onQueryChange(newQuery);
         } else {
-            // Collapse: Replace SELECT col1, col2, ... FROM table with SELECT * FROM table
-            // Only if ALL columns of the table are selected
+            // Collapse: Replace column lists with "table".* for each table
             let newQuery = sqlQuery;
 
-            // Match SELECT ... FROM table patterns (handles multiline)
-            const selectPattern = /SELECT\s+([\s\S]*?)\s+FROM\s+["']?(\w+)["']?/gi;
-            const replacements: { original: string; replacement: string }[] = [];
-
-            let match;
-            while ((match = selectPattern.exec(sqlQuery)) !== null) {
-                const columnsPart = match[1].trim();
-                const tableName = match[2].toLowerCase();
-                const tableColumns = tableSchemaMap[tableName];
-
-                if (tableColumns && columnsPart !== '*') {
-                    // Parse the columns in the SELECT, handling "table"."col" format
-                    const selectedCols = columnsPart
-                        .split(',')
-                        .map(c => extractColumnName(c))
-                        .filter(c => c.length > 0);
-
-                    // Check if all table columns are selected (order doesn't matter)
-                    const tableColsLower = tableColumns.map(tc => tc.toLowerCase());
-                    const allSelected = tableColsLower.length === selectedCols.length &&
-                        tableColsLower.every(tc => selectedCols.includes(tc));
-
-                    if (allSelected) {
-                        replacements.push({
-                            original: match[0],
-                            replacement: `SELECT * FROM "${match[2]}"`
-                        });
-                    }
-                }
+            // Find the SELECT ... FROM part
+            const selectMatch = sqlQuery.match(/SELECT\s+([\s\S]*?)\s+FROM\s+/i);
+            if (!selectMatch) {
+                onQueryChange(newQuery);
+                return;
             }
 
-            // Apply replacements
-            replacements.forEach(r => {
-                newQuery = newQuery.replace(r.original, r.replacement);
+            const columnsPart = selectMatch[1].trim();
+            if (columnsPart === '*') {
+                onQueryChange(newQuery);
+                return;
+            }
+
+            // Parse all columns and group by table
+            const columns = columnsPart.split(',').map(c => c.trim()).filter(c => c.length > 0);
+            const columnsByTable: { [table: string]: string[] } = {};
+
+            columns.forEach(col => {
+                const parsed = parseColumnRef(col);
+                if (parsed.table) {
+                    if (!columnsByTable[parsed.table]) {
+                        columnsByTable[parsed.table] = [];
+                    }
+                    columnsByTable[parsed.table].push(parsed.column);
+                }
             });
+
+            // Check each table - if all columns selected, replace with "table".*
+            const newColumnParts: string[] = [];
+            const processedTables = new Set<string>();
+
+            columns.forEach(col => {
+                const parsed = parseColumnRef(col);
+                if (parsed.table && !processedTables.has(parsed.table)) {
+                    const tableColumns = tableSchemaMap[parsed.table];
+                    const selectedCols = columnsByTable[parsed.table] || [];
+
+                    if (tableColumns) {
+                        const tableColsLower = tableColumns.map(tc => tc.toLowerCase());
+                        const allSelected = tableColsLower.length === selectedCols.length &&
+                            tableColsLower.every(tc => selectedCols.includes(tc));
+
+                        if (allSelected) {
+                            // All columns selected - use table.*
+                            newColumnParts.push(`"${parsed.table}".*`);
+                            processedTables.add(parsed.table);
+                            return;
+                        }
+                    }
+                    processedTables.add(parsed.table);
+                    // Not all columns - keep individual columns for this table
+                    columnsByTable[parsed.table].forEach(c => {
+                        newColumnParts.push(`"${parsed.table}"."${c}"`);
+                    });
+                } else if (!parsed.table) {
+                    // Column without table prefix - keep as is
+                    newColumnParts.push(col);
+                }
+            });
+
+            // Rebuild the query
+            if (newColumnParts.length > 0) {
+                const newColumnsStr = newColumnParts.join(',\n    ');
+                newQuery = sqlQuery.replace(selectMatch[0], `SELECT\n    ${newColumnsStr}\nFROM `);
+            }
 
             onQueryChange(newQuery);
         }
@@ -378,7 +426,7 @@ const SQLPanel: React.FC<SQLPanelProps> = ({
                                                 <th className="px-3 py-2 font-mono text-[10px] text-muted-foreground border-b-2 border-r border-border w-12 text-center">#</th>
                                                 {Object.keys(queryResults[0]).map(header => (
                                                     <th key={header} className="px-4 py-2 font-semibold text-foreground whitespace-nowrap uppercase tracking-wide text-xs font-mono border-b-2 border-r border-border last:border-r-0">
-                                                        {header}
+                                                        {prettifyFieldName(header)}
                                                     </th>
                                                 ))}
                                             </tr>

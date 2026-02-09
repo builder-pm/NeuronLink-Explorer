@@ -1,4 +1,5 @@
 import { ChatMessage, AIAction, DataRow, SemanticContext } from '../types';
+import { generateSemanticContext } from '../utils/contextBuilder';
 
 // Helper to get API Key (checks process.env and standard Vite env vars)
 
@@ -44,7 +45,7 @@ You have two main modes of operation depending on the user's current context:
 **CRITICAL GOVERNANCE RULE**:
 You must ONLY speak about and suggest fields/tables that are explicitly listed in the "SEMANTIC CONTEXT" below.
 Do not hallucinate columns that do not exist in the context.
-If a user asks for a field not in the context, politely explain that it is not available in the current configuration.
+If a user asks for a field not in the context, check if it exists in "OTHER AVAILABLE TABLES" and use the suggest_fields action.
 
 ---
 
@@ -100,8 +101,39 @@ If the user is in Analysis View and asks to "pivot by...", "filter for...", or "
     }
     \`\`\`
 
-#### 3. GENERAL CHAT
+#### 3. SUGGEST FIELDS (Expansion Protocol)
+If the user asks for data that requires tables/fields NOT in the current model but visible in "OTHER AVAILABLE TABLES":
+- Generate \`suggest_fields\` action to recommend adding fields.
+- **IMPORTANT**: Include all necessary \`suggestedJoins\` to connect the new tables to the existing model.
+- JSON Format:
+  \`\`\`json
+  {
+      "command": {
+          "action": "suggest_fields",
+          "suggestedFields": [
+              { "table": "category", "fields": ["name", "category_id"] },
+              { "table": "film_category", "fields": ["film_id", "category_id"] }
+          ],
+          "suggestedJoins": [
+              { "from": "film", "to": "film_category", "type": "LEFT JOIN", "on": { "from": "film_id", "to": "film_id" } },
+              { "from": "film_category", "to": "category", "type": "LEFT JOIN", "on": { "from": "category_id", "to": "category_id" } }
+          ],
+          "reason": "To analyze films by category, we need to add the category and film_category tables."
+      },
+      "response": "I can help with that! But first, I'll need to add some fields to your model. Click 'Add Fields' to include the category information."
+  }
+  \`\`\`
+
+#### 4. GENERAL CHAT
 - If no action is needed, return \`"command": null\`.
+
+---
+
+### METADATA USAGE GUIDE
+When answering questions, leverage the semantic context:
+- **Field descriptions**: Use these to understand what each field represents.
+- **Sample values**: Use these to suggest valid filter values (e.g., "ratings like PG, R, PG-13").
+- **Metrics**: Reference available metrics when discussing calculations.
 
 ---
 `;
@@ -109,41 +141,33 @@ If the user is in Analysis View and asks to "pivot by...", "filter for...", or "
 function generateSystemPrompt(context: SemanticContext): string {
   const isModeling = context.view === 'modeling';
 
-  // Convert Model Config to YAML-like string for clarity
-  let semanticYaml = "SEMANTIC CONTEXT:\n";
+  // Build tiered semantic context using contextBuilder
+  const semanticContextString = generateSemanticContext({
+    modelConfiguration: context.modelConfiguration,
+    joins: context.joins,
+    fieldMetadata: context.fieldMetadata,
+    metrics: context.metrics,
+    schemaRegistry: context.schemaRegistry ? { tables: context.schemaRegistry.tables } : undefined,
+    sampleValues: context.sampleValues,
+    maxChars: 8000 // Reserve space for system prompt
+  });
 
+  let modeInstructions = '';
   if (isModeling) {
-    semanticYaml += `Available Tables (For Modeling):\n`;
-    // In a real app we'd list all found tables. 
-    // For now, we assume the AI knows the 'dvdrental' schema or we pass a schema summary.
-    // We will pass a reduced schema summary of commonly known tables for this demo.
-    semanticYaml += `
-          - actor (actor_id, first_name, last_name...)
-          - film (film_id, title, description, release_year, rental_rate, rating...)
-          - inventory (inventory_id, film_id, store_id)
-          - customer (customer_id, store_id, first_name, last_name, email, address_id...)
-          - rental (rental_id, rental_date, inventory_id, customer_id, staff_id...)
-          - payment (payment_id, customer_id, staff_id, rental_id, amount, payment_date)
-          - store (store_id, manager_staff_id, address_id...)
-          - address (address_id, address, district, city_id...)
-          - city (city_id, city, country_id)
-          - country (country_id, country)
-          - category (category_id, name)
-          - film_category (film_id, category_id)
-        \n`;
+    modeInstructions = `
+**CURRENT MODE: MODELING**
+The user is building their data model. Help them select tables and configure joins.
+Use propose_model action to suggest table configurations.`;
   } else {
-    semanticYaml += `Selected Model Fields (RESTRICTED TO THESE ONLY):\n`;
-    Object.entries(context.modelConfiguration).forEach(([table, fields]) => {
-      semanticYaml += `  - ${table}: [${fields.join(', ')}]\n`;
-    });
-
-    semanticYaml += `\nExisting Joins:\n`;
-    context.joins.forEach(j => {
-      semanticYaml += `  - ${j.from} JOIN ${j.to} ON ${j.on.from} = ${j.on.to}\n`;
-    });
+    modeInstructions = `
+**CURRENT MODE: ANALYSIS**  
+The user is analyzing their configured model.
+Use propose_analysis for pivot/filter operations.
+Use query for direct SQL questions.
+Use suggest_fields if they need data outside their current model.`;
   }
 
-  return `${BASE_SYSTEM_INSTRUCTION}\n\n${semanticYaml}`;
+  return `${BASE_SYSTEM_INSTRUCTION}\n${modeInstructions}\n\n${semanticContextString}`;
 }
 
 export async function getAIResponse(
@@ -200,7 +224,17 @@ export async function getAIResponse(
     const content = data.choices?.[0]?.message?.content || "";
 
     let jsonStr = content.trim();
-    // Strip markdown fences if present
+    
+    // Improved JSON extraction: try to find the actual JSON object if it's wrapped in text
+    if (!jsonStr.startsWith('{')) {
+      const startIdx = jsonStr.indexOf('{');
+      const endIdx = jsonStr.lastIndexOf('}');
+      if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+        jsonStr = jsonStr.substring(startIdx, endIdx + 1);
+      }
+    }
+
+    // Strip markdown fences if still present (fallback)
     const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
     const match = jsonStr.match(fenceRegex);
     if (match && match[2]) jsonStr = match[2].trim();
@@ -264,140 +298,139 @@ export async function getAIResponseWithData(
     const resData = await response.json();
     return resData.choices?.[0]?.message?.content || "No summary available.";
 
-    } catch (e) {
+  } catch (e) {
 
-      return "Found data, but couldn't summarize it.";
-
-    }
+    return "Found data, but couldn't summarize it.";
 
   }
 
-  
+}
 
-  /**
 
-   * Generates concise, professional descriptions for a list of database tables.
 
-   */
+/**
 
-  export async function generateTableDescriptions(tableNames: string[]): Promise<Record<string, string>> {
+ * Generates concise, professional descriptions for a list of database tables.
 
-    if (!OPENROUTER_API_KEY || tableNames.length === 0) {
+ */
 
-      return tableNames.reduce((acc, name) => ({ ...acc, [name]: '' }), {});
+export async function generateTableDescriptions(tableNames: string[]): Promise<Record<string, string>> {
 
-    }
+  if (!OPENROUTER_API_KEY || tableNames.length === 0) {
 
-  
+    return tableNames.reduce((acc, name) => ({ ...acc, [name]: '' }), {});
 
-    const model = OPENROUTER_MODEL;
+  }
 
-    const prompt = `Generate short, professional descriptions (max 1 sentence) for these database tables: ${tableNames.join(', ')}.
+
+
+  const model = OPENROUTER_MODEL;
+
+  const prompt = `Generate short, professional descriptions (max 1 sentence) for these database tables: ${tableNames.join(', ')}.
 
   Return ONLY a JSON object where keys are table names and values are descriptions.
 
   Example: { "users": "Stores user account information and authentication details." }`;
 
-  
 
-    try {
 
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  try {
 
-        method: "POST",
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
 
-        headers: {
+      method: "POST",
 
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+      headers: {
 
-          "HTTP-Referer": SITE_URL,
+        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
 
-          "X-Title": SITE_NAME,
+        "HTTP-Referer": SITE_URL,
 
-          "Content-Type": "application/json"
+        "X-Title": SITE_NAME,
 
-        },
+        "Content-Type": "application/json"
 
-        body: JSON.stringify({
+      },
 
-          "model": model,
+      body: JSON.stringify({
 
-          "messages": [
+        "model": model,
 
-            { "role": "system", "content": "You are a database architect who provides concise documentation." },
+        "messages": [
 
-            { "role": "user", "content": prompt }
+          { "role": "system", "content": "You are a database architect who provides concise documentation." },
 
-          ],
+          { "role": "user", "content": prompt }
 
-          "response_format": { "type": "json_object" }
+        ],
 
-        })
+        "response_format": { "type": "json_object" }
 
-      });
+      })
 
-  
+    });
 
-      if (!response.ok) throw new Error(`OpenRouter API Error: ${response.statusText}`);
 
-  
 
-      const data = await response.json();
+    if (!response.ok) throw new Error(`OpenRouter API Error: ${response.statusText}`);
 
-      let content = data.choices?.[0]?.message?.content || "{}";
 
-      
 
-      // Robust JSON parsing (strip fences if present)
+    const data = await response.json();
 
-      content = content.trim();
+    let content = data.choices?.[0]?.message?.content || "{}";
 
-      if (content.startsWith('```')) {
 
-        content = content.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
 
-      }
+    // Robust JSON parsing (strip fences if present)
 
-  
+    content = content.trim();
 
-      let descriptions: Record<string, string> = {};
+    if (content.startsWith('```')) {
 
-      try {
-
-        descriptions = JSON.parse(content);
-
-      } catch (e) {
-
-        console.error("Failed to parse table descriptions JSON:", content);
-
-      }
-
-  
-
-      // Ensure all requested tables have at least an empty string if AI missed some
-
-      const result: Record<string, string> = {};
-
-      tableNames.forEach(name => {
-
-        result[name] = descriptions[name] || '';
-
-      });
-
-  
-
-      return result;
-
-  
-
-    } catch (e) {
-
-      console.error("Failed to generate table descriptions:", e);
-
-      return tableNames.reduce((acc, name) => ({ ...acc, [name]: '' }), {});
+      content = content.replace(/^```json\s*/, '').replace(/^```\s*/, '').replace(/\s*```$/, '');
 
     }
 
+
+
+    let descriptions: Record<string, string> = {};
+
+    try {
+
+      descriptions = JSON.parse(content);
+
+    } catch (e) {
+
+      console.error("Failed to parse table descriptions JSON:", content);
+
+    }
+
+
+
+    // Ensure all requested tables have at least an empty string if AI missed some
+
+    const result: Record<string, string> = {};
+
+    tableNames.forEach(name => {
+
+      result[name] = descriptions[name] || '';
+
+    });
+
+
+
+    return result;
+
+
+
+  } catch (e) {
+
+    console.error("Failed to generate table descriptions:", e);
+
+    return tableNames.reduce((acc, name) => ({ ...acc, [name]: '' }), {});
+
   }
 
-  
+}
+

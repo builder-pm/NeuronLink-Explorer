@@ -3,6 +3,7 @@ import React, { useState, useRef, useMemo } from 'react';
 import { useDrag } from 'react-dnd';
 import { SearchIcon, ChevronDownIcon } from './icons';
 import { ItemTypes, FieldGroups, FieldAliases } from '../types';
+import { prettifyFieldName } from '../utils/stringUtils';
 
 interface DataFieldsPanelProps {
     selectedFields: string[];
@@ -43,7 +44,7 @@ const DraggableFieldItem: React.FC<DraggableFieldItemProps> = ({ field, alias, i
                 />
                 <div className="flex flex-col">
                     <span className={`text-sm ${alias ? 'text-primary font-bold' : 'text-foreground'}`}>
-                        {(alias || field).replace(/_/g, ' ')}
+                        {alias || prettifyFieldName(field)}
                     </span>
                     {alias && (
                         <span className="text-[10px] text-muted-foreground italic -mt-1">
