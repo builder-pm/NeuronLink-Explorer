@@ -43,6 +43,7 @@ export const initialState: AppState = {
     sampleValues: {},
     hiddenFields: new Set<string>(),
     discoveredTables: [],
+    metrics: [],
 
     // New model state
     modelConfiguration: {},
@@ -289,35 +290,37 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             } else if (isSelected === true) { // Table is being selected
                 const allFieldsForTable = state.discoveredTables.find(t => t.name === tableName)?.fields || [];
                 newModelConfig[tableName] = allFieldsForTable;
-                
-                // Initialize metadata for these fields
+
+                // Initialize metadata for these fields from registry (unified source)
+                const registryTable = state.schemaRegistry?.tables.find(t => t.name === tableName);
                 allFieldsForTable.forEach(field => {
                     const fieldKey = `${tableName}.${field}`;
                     if (!newFieldMetadata[fieldKey]) {
-                        // Check registry for existing description
-                        const registryTable = state.schemaRegistry?.tables.find(t => t.name === tableName);
                         const registryCol = registryTable?.columns.find(c => c.name === field);
-                        
+
                         newFieldMetadata[fieldKey] = {
                             description: registryCol?.description || '',
-                            dataType: inferDataType(field)
+                            dataType: registryCol?.semanticType || inferDataType(field),
+                            isPrimary: registryCol?.isPrimary,
+                            foreignKey: registryCol?.foreignKey
                         };
                     }
                 });
             } else if (fields) { // Fields for an existing table are being updated
                 newModelConfig[tableName] = fields;
-                
-                // Initialize metadata for any new fields
+
+                // Initialize metadata for any new fields from registry (unified source)
+                const registryTable = state.schemaRegistry?.tables.find(t => t.name === tableName);
                 fields.forEach(field => {
                     const fieldKey = `${tableName}.${field}`;
                     if (!newFieldMetadata[fieldKey]) {
-                        // Check registry for existing description
-                        const registryTable = state.schemaRegistry?.tables.find(t => t.name === tableName);
                         const registryCol = registryTable?.columns.find(c => c.name === field);
 
                         newFieldMetadata[fieldKey] = {
                             description: registryCol?.description || '',
-                            dataType: inferDataType(field)
+                            dataType: registryCol?.semanticType || inferDataType(field),
+                            isPrimary: registryCol?.isPrimary,
+                            foreignKey: registryCol?.foreignKey
                         };
                     }
                 });
@@ -375,18 +378,23 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             const { data } = action.payload;
             const newFieldMetadata = { ...state.fieldMetadata };
 
-            // Propagate descriptions from registry to fieldMetadata
+            // Propagate all metadata from registry to fieldMetadata (unified source)
             if (data && data.tables) {
                 data.tables.forEach(table => {
                     table.columns.forEach(col => {
                         const fieldKey = `${table.name}.${col.name}`;
-                        if (col.description && !newFieldMetadata[fieldKey]?.description) {
-                            newFieldMetadata[fieldKey] = {
-                                ...(newFieldMetadata[fieldKey] || {}),
-                                description: col.description,
-                                dataType: newFieldMetadata[fieldKey]?.dataType || inferDataType(col.name)
-                            };
-                        }
+                        const existing = newFieldMetadata[fieldKey] || {};
+
+                        // Always sync structural metadata (PK/FK) from registry
+                        // Use semanticType from registry if available, otherwise infer
+                        // Only sync description/dataType if user hasn't set a custom one
+                        newFieldMetadata[fieldKey] = {
+                            ...existing,
+                            description: existing.description || col.description || '',
+                            dataType: existing.dataType || col.semanticType || inferDataType(col.name),
+                            isPrimary: col.isPrimary,
+                            foreignKey: col.foreignKey
+                        };
                     });
                 });
             }
@@ -401,6 +409,34 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
 
         case ActionType.SET_USER:
             return { ...state, currentUser: action.payload };
+
+        case ActionType.SET_METRICS:
+            return {
+                ...state,
+                metrics: action.payload.metrics
+            };
+
+        case ActionType.ADD_METRIC:
+            return {
+                ...state,
+                metrics: [...state.metrics, action.payload.metric]
+            };
+
+        case ActionType.UPDATE_METRIC:
+            return {
+                ...state,
+                metrics: state.metrics.map(m =>
+                    m.id === action.payload.metricId
+                        ? { ...m, ...action.payload.updates }
+                        : m
+                )
+            };
+
+        case ActionType.DELETE_METRIC:
+            return {
+                ...state,
+                metrics: state.metrics.filter(m => m.id !== action.payload.metricId)
+            };
 
         default:
             return state;

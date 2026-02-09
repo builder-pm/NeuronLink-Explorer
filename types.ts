@@ -162,6 +162,7 @@ export interface AppState {
     sampleValues: Record<string, string[]>; // key: "tableName.fieldName"
     hiddenFields: Set<string>;
     discoveredTables: { name: string, fields: string[] }[];
+    metrics: Metric[];
 
     // New model state
     modelConfiguration: ModelConfiguration; // Unconfirmed model being edited
