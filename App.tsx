@@ -24,6 +24,24 @@ import { appSupabase } from './services/appSupabase';
 import { syncSchemaRegistry } from './services/schemaRegistry';
 import { initLogging, logEvent } from './services/logger';
 import AuthModal from './components/AuthModal'; // Import Auth Modal
+import { ErrorBoundary } from 'react-error-boundary';
+
+// Error Boundary Fallback component
+const ErrorFallback = ({ error, resetErrorBoundary }: { error: Error, resetErrorBoundary: () => void }) => (
+  <div className="h-full w-full flex flex-col items-center justify-center p-6 bg-card border-4 border-destructive shadow-brutal text-center space-y-4">
+    <div className="text-4xl">⚠️</div>
+    <h3 className="text-xl font-bold font-mono">Component Crashed</h3>
+    <p className="text-muted-foreground text-sm max-w-md font-mono">
+      {error.message}
+    </p>
+    <button
+      onClick={resetErrorBoundary}
+      className="px-4 py-2 bg-primary text-primary-foreground font-bold border-2 border-foreground shadow-brutal-sm hover:translate-x-0.5 hover:translate-y-0.5 hover:shadow-none transition-all"
+    >
+      Try Again
+    </button>
+  </div>
+);
 
 // By defining panel components outside of App and memoizing them, we prevent
 // them from re-rendering on every state change in the parent App component.
@@ -1007,22 +1025,23 @@ const App: React.FC = () => {
         ) : (
           <div className="flex-1 flex overflow-hidden">
             <div className="flex-1 flex flex-col relative min-w-0">
-              <MemoizedMainArea
-                currentView={currentView}
-                paginatedData={paginatedData}
-                tableHeaders={tableHeaders}
-                isLoading={isLoadingData}
-                fileName={fileName}
-                dispatch={dispatch}
-                currentPage={currentPage}
-                rowsPerPage={rowsPerPage}
-                totalRows={processedData.length}
-                onRowsPerPageChange={handleRowsPerPageChange}
-                onExport={handleExport}
-                isDemoMode={isDemoMode}
-                state={state}
-
-              />
+              <ErrorBoundary FallbackComponent={ErrorFallback}>
+                <MemoizedMainArea
+                  currentView={currentView}
+                  paginatedData={paginatedData}
+                  tableHeaders={tableHeaders}
+                  isLoading={isLoadingData}
+                  fileName={fileName}
+                  dispatch={dispatch}
+                  currentPage={currentPage}
+                  rowsPerPage={rowsPerPage}
+                  totalRows={processedData.length}
+                  onRowsPerPageChange={handleRowsPerPageChange}
+                  onExport={handleExport}
+                  isDemoMode={isDemoMode}
+                  state={state}
+                />
+              </ErrorBoundary>
               <PanelToggle
                 isOpen={isSecondaryPanelOpen}
                 onToggle={() => dispatch({ type: ActionType.TOGGLE_SECONDARY_PANEL })}
@@ -1030,19 +1049,21 @@ const App: React.FC = () => {
             </div>
             <div className="flex flex-shrink-0 shadow-brutal-left z-10 border-l-4 border-border relative">
               <div className={`transition-[width] duration-300 ease-in-out ${isSecondaryPanelOpen ? 'w-80' : 'w-0'} overflow-hidden flex-shrink-0 h-full`}>
-                <MemoizedSecondaryPanel
-                  currentView={currentView}
-                  pivotConfig={pivotConfig}
-                  filters={filters}
-                  dispatch={dispatch}
-                  fieldGroups={dynamicFieldGroups}
-                  allAvailableFields={availableFields}
-                  state={state}
-                  sqlQuery={sqlQuery}
-                  executeQuery={executeQuery}
-                  onPreviewTable={handlePreviewTable}
-                  onBatchUpdate={handlePivotBatchUpdate}
-                />
+                <ErrorBoundary FallbackComponent={ErrorFallback}>
+                  <MemoizedSecondaryPanel
+                    currentView={currentView}
+                    pivotConfig={pivotConfig}
+                    filters={filters}
+                    dispatch={dispatch}
+                    fieldGroups={dynamicFieldGroups}
+                    allAvailableFields={availableFields}
+                    state={state}
+                    sqlQuery={sqlQuery}
+                    executeQuery={executeQuery}
+                    onPreviewTable={handlePreviewTable}
+                    onBatchUpdate={handlePivotBatchUpdate}
+                  />
+                </ErrorBoundary>
               </div>
 
               <div
@@ -1052,25 +1073,27 @@ const App: React.FC = () => {
               />
 
               <div style={{ width: rightPanelWidth }} className="flex-shrink-0 overflow-hidden bg-card">
-                <MemoizedPrimaryPanel
-                  currentView={currentView}
-                  activePanel={activePanel}
-                  selectedFields={currentView === 'analysis' ? analysisActiveFields : selectedFields}
-                  onFieldChange={currentView === 'analysis' ? handleAnalysisFieldChange : handleDbFieldChange}
-                  onAIAction={handleAIAction}
-                  fieldGroups={dynamicFieldGroups}
-                  executeQuery={executeQuery}
-                  availableFields={availableFields}
-                  dispatch={dispatch}
-                  onSendMessage={handleSendChatMessage}
-                  isAiLoading={state.isAiLoading || false}
-                  isDemoMode={isDemoMode}
-                  fieldAliases={state.fieldAliases}
-                  isGuest={isGuest}
-                  state={state} modelConfiguration={state.modelConfiguration}
-                  confirmedModelConfiguration={state.confirmedModelConfiguration}
-                  joins={state.joins}
-                />
+                <ErrorBoundary FallbackComponent={ErrorFallback}>
+                  <MemoizedPrimaryPanel
+                    currentView={currentView}
+                    activePanel={activePanel}
+                    selectedFields={currentView === 'analysis' ? analysisActiveFields : selectedFields}
+                    onFieldChange={currentView === 'analysis' ? handleAnalysisFieldChange : handleDbFieldChange}
+                    onAIAction={handleAIAction}
+                    fieldGroups={dynamicFieldGroups}
+                    executeQuery={executeQuery}
+                    availableFields={availableFields}
+                    dispatch={dispatch}
+                    onSendMessage={handleSendChatMessage}
+                    isAiLoading={state.isAiLoading || false}
+                    isDemoMode={isDemoMode}
+                    fieldAliases={state.fieldAliases}
+                    isGuest={isGuest}
+                    state={state} modelConfiguration={state.modelConfiguration}
+                    confirmedModelConfiguration={state.confirmedModelConfiguration}
+                    joins={state.joins}
+                  />
+                </ErrorBoundary>
               </div>
             </div>
           </div>
