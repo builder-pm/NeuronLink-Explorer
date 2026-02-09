@@ -13,11 +13,13 @@ import {
     Position,
     MarkerType,
     BackgroundVariant,
+    useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Join, FieldAliases } from '../types';
 import JoinEditorModal from './JoinEditorModal';
-import { DatabaseIcon, EyeIcon, XIcon } from './icons';
+import { DatabaseIcon, EyeIcon, XIcon, AISparklesIcon } from './icons';
+import { calculateAutoLayout } from '../utils/layout';
 
 interface DataModelCanvasProps {
     joins: Join[];
@@ -163,6 +165,7 @@ const DataModelCanvas: React.FC<DataModelCanvasProps> = ({
     isModelDirty,
     onConfirmModel
 }) => {
+    const { fitView } = useReactFlow();
     const [editingJoin, setEditingJoin] = useState<Join | null>(null);
 
     const onPreviewTableRef = useRef(onPreviewTable);
@@ -244,6 +247,15 @@ const DataModelCanvas: React.FC<DataModelCanvasProps> = ({
 
     const [nodes, setNodes, onNodesChange] = useNodesState<Node<TableNodeData>>(createInitialNodes());
     const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+    // Initial fit view
+    useEffect(() => {
+        if (tables.length > 0) {
+            setTimeout(() => {
+                fitView({ padding: 0.2 });
+            }, 100);
+        }
+    }, []); // Only on mount
 
     useEffect(() => {
         setNodes((currentNodes) => {
@@ -353,10 +365,44 @@ const DataModelCanvas: React.FC<DataModelCanvasProps> = ({
         setEditingJoin(null);
     }, []);
 
+    const handleAutoLayout = useCallback(() => {
+        const tableNames = tables.map(t => t.name);
+        const newPositions = calculateAutoLayout(tableNames, joins);
+        onTablePositionsChange(newPositions);
+        
+        // Update nodes immediately for better UX
+        setNodes(currentNodes => 
+            currentNodes.map(node => ({
+                ...node,
+                position: { 
+                    x: newPositions[node.id]?.left || node.position.x, 
+                    y: newPositions[node.id]?.top || node.position.y 
+                }
+            }))
+        );
+
+        // Fit view after layout with a slight delay to allow nodes to move
+        setTimeout(() => {
+            fitView({ duration: 800, padding: 0.2 });
+        }, 50);
+    }, [tables, joins, onTablePositionsChange, setNodes, fitView]);
+
     return (
         <div className="flex-1 h-full flex flex-col p-4 bg-background overflow-hidden relative z-10">
             <div className="flex-1 h-full relative border-2 border-border" style={{ boxShadow: 'inset 0 2px 8px 0 rgba(0,0,0,0.4)' }}>
                 {tables.length === 0 ? <EmptyCanvas /> : null}
+
+                {/* Magic Layout Button */}
+                {tables.length > 0 && (
+                    <button
+                        onClick={handleAutoLayout}
+                        className="absolute top-4 right-14 z-50 p-2 bg-primary text-primary-foreground border-2 border-border shadow-brutal hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all group flex items-center gap-2"
+                        title="Auto-arrange Tables"
+                    >
+                        <AISparklesIcon className="h-5 w-5 group-hover:animate-pulse" />
+                        <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">Magic Layout</span>
+                    </button>
+                )}
 
                 <ReactFlow
                     nodes={nodes}

@@ -8,10 +8,10 @@
 
 | Metric | Value |
 |--------|-------|
-| **Current Phase** | 8 of 8 (Integration & Polish) |
+| **Current Phase** | 8 of 9 (Integration & Polish) |
 | **Overall Progress** | 87.5% |
 | **Requirements Complete** | 42/44 |
-| **Phases Complete** | 7/8 |
+| **Phases Complete** | 7/9 |
 
 **Last activity:** 2026-02-11 - Planned Phase 08 (Integration & Polish)
 
@@ -29,6 +29,7 @@
 | 6 | Metric Validation | Validate metrics against model and suggest additions | MVAL-01 to MVAL-04 | Medium |
 | 7 | AI Context Enhancement | AI has full semantic context access with tiering | AI-01 to AI-06 | Medium |
 | 8 | Integration & Polish | End-to-end flow testing, edge cases, UX polish | Cross-cutting | Low |
+| 9 | Semantic Graph Context | Visual graph representation of table relationships | SGC-01 to SGC-XX | Medium |
 
 ---
 
@@ -153,6 +154,29 @@ Plans:
 
 ---
 
+## Phase 9: Semantic Graph Context
+
+**Goal:** Visual graph representation of table relationships and semantic context
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 9 to break down)
+
+**Requirements:** SGC-01 to SGC-XX (to be defined)
+
+**Success Criteria:**
+1. Interactive graph visualization of tables and relationships
+2. PK-FK connections displayed as edges
+3. Semantic context visible on nodes (descriptions, metrics)
+4. Navigation between graph and detail views
+
+**Key Files:** TBD
+
+**Dependencies:** Phases 4, 7, 8
+
+---
+
 ## Dependency Graph
 
 ```
@@ -191,4 +215,4 @@ Phase 8 (Integration) ───────────────────�
 ---
 
 *Roadmap created: 2025-02-07*
-*Last updated: 2026-02-11 after Phase 08 planning*
+*Last updated: 2026-02-10 after Phase 09 added*

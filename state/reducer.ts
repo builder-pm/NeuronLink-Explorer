@@ -2,6 +2,7 @@ import { AppState, PivotConfig, ModelConfiguration } from '../types';
 import { AppAction, ActionType } from './actions';
 import { inferDataType } from '../utils/metadataInference';
 import { initializeFieldMetadata } from '../utils/stateHelpers';
+import { calculateAutoLayout } from '../utils/layout';
 import {
     initialSql,
     INITIAL_FIELD_GROUPS,
@@ -227,18 +228,27 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
 
             // Synthesize discoveredTables from loaded modelConfiguration if not already present
             let synthesizedTables = state.discoveredTables;
-            if (config.modelConfiguration && Object.keys(config.modelConfiguration).length > 0) {
-                const existingTableNames = new Set(state.discoveredTables.map(t => t.name));
-                const configTableNames = Object.keys(config.modelConfiguration);
+            const modelConfig = config.modelConfiguration || state.modelConfiguration;
+            const configTableNames = Object.keys(modelConfig);
 
+            if (configTableNames.length > 0) {
+                const existingTableNames = new Set(state.discoveredTables.map(t => t.name));
                 const missingTables = configTableNames.filter(name => !existingTableNames.has(name));
                 if (missingTables.length > 0) {
                     const newTables = missingTables.map(tableName => ({
                         name: tableName,
-                        fields: config.modelConfiguration[tableName] || []
+                        fields: modelConfig[tableName] || []
                     }));
                     synthesizedTables = [...state.discoveredTables, ...newTables];
                 }
+            }
+
+            // Auto-layout if positions are missing
+            let tablePositions = config.tablePositions || state.tablePositions;
+            const normalizedJoins = normalizeJoins(config.joins || state.joins);
+            
+            if (!config.tablePositions || Object.keys(config.tablePositions).length === 0) {
+                tablePositions = calculateAutoLayout(configTableNames, normalizedJoins);
             }
 
             const pendingState = {
@@ -248,8 +258,8 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
                 filters: config.filters || state.filters,
                 selectedFields: config.selectedFields || state.selectedFields,
                 analysisActiveFields: config.analysisActiveFields || state.analysisActiveFields || [],
-                joins: normalizeJoins(config.joins || state.joins),
-                tablePositions: config.tablePositions || state.tablePositions,
+                joins: normalizedJoins,
+                tablePositions: tablePositions,
                 fieldGroups: config.fieldGroups || state.fieldGroups,
                 fieldAliases: config.fieldAliases || state.fieldAliases,
                 fieldMetadata: config.fieldMetadata || state.fieldMetadata,
