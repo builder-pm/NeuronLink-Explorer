@@ -18,6 +18,7 @@
     "@xyflow/react": "^12.10.0",
     "dotenv": "^17.2.3",
     "fast-formula-parser": "^1.0.19",
+    "js-tiktoken": "^1.0.21",
     "lucide-react": "^0.563.0",
     "monaco-editor": "0.45.0",
     "pg": "^8.18.0",
