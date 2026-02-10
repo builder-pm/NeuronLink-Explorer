@@ -39,12 +39,10 @@ const SemanticModelViewerPanel: React.FC<SemanticModelViewerPanelProps> = ({ sta
     const tokenCount = useMemo(() => {
         try {
             const encoder = encodingForModel('gpt-3.5-turbo');
-            const tokens = encoder.encode(semanticContext);
-            encoder.free();
-            return tokens.length;
+            return encoder.encode(semanticContext).length;
         } catch (error) {
             console.error('Token encoding error:', error);
-            return 0;
+            return Math.ceil(semanticContext.length / 4);
         }
     }, [semanticContext]);
 
