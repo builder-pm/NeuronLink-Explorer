@@ -35,6 +35,8 @@ export interface ChatMessage {
     text: string;
     isLoading?: boolean;
     suggestAction?: AIAction;
+    appliedAction?: AIAction;
+    timestamp?: number;
 }
 
 export interface ChatThread {

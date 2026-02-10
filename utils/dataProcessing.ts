@@ -1,4 +1,4 @@
-import { PivotConfig, Filter, Join, ModelConfiguration, FieldAliases } from '../types';
+import { PivotConfig, Filter, Join, ModelConfiguration, FieldAliases, Metric } from '../types';
 import { executeQuery as executeDbQuery } from '../services/database';
 
 interface ModelInfo {
@@ -103,7 +103,8 @@ export const generateQuery = async (
     filters: Filter[],
     allDiscoveredTables: DiscoveredTable[],
     fieldAliases: FieldAliases = {},
-    selectedFields?: string[]
+    selectedFields?: string[],
+    metrics: Metric[] = []
 ): Promise<string | null> => {
     const { modelConfig, joins } = model;
     const selectedTables = Object.keys(modelConfig);
@@ -113,13 +114,14 @@ export const generateQuery = async (
     }
 
     const allAvailableFieldsInModel = new Set<string>(Object.values(modelConfig).flat());
+    const metricIds = new Set(metrics.map(m => m.id));
 
     const cleanPivotConfig: PivotConfig = {
-        rows: pivotConfig.rows.filter(f => allAvailableFieldsInModel.has(f)),
-        columns: pivotConfig.columns.filter(f => allAvailableFieldsInModel.has(f)),
-        values: pivotConfig.values.filter(v => allAvailableFieldsInModel.has(v.field)),
+        rows: pivotConfig.rows.filter(f => allAvailableFieldsInModel.has(f) || metricIds.has(f)),
+        columns: pivotConfig.columns.filter(f => allAvailableFieldsInModel.has(f) || metricIds.has(f)),
+        values: pivotConfig.values.filter(v => allAvailableFieldsInModel.has(v.field) || metricIds.has(v.field)),
     };
-    const cleanFilters = filters.filter(f => allAvailableFieldsInModel.has(f.field));
+    const cleanFilters = filters.filter(f => allAvailableFieldsInModel.has(f.field) || metricIds.has(f.field));
 
     const { rows, columns, values } = cleanPivotConfig;
     const fromClause = buildFromClause(modelConfig, joins);
@@ -196,6 +198,10 @@ export const generateQuery = async (
 
             const fieldsToSelect = rawFieldsToSelect
                 .map(field => {
+                    const metric = metrics.find(m => m.id === field);
+                    if (metric) {
+                        return `${metric.formula} as ${quote(metric.name)}`;
+                    }
                     const table = findTableForField(field, modelConfig, allDiscoveredTables);
                     const alias = fieldAliases[`${table}.${field}`];
                     return `${quote(table)}.${quote(field)} as ${quote(alias || field)}`;
@@ -217,6 +223,10 @@ export const generateQuery = async (
                 return `${quote(table)}.${quote(f)} as ${quote(alias || f)}`;
             }),
             ...values.map(v => {
+                const metric = metrics.find(m => m.id === v.field);
+                if (metric) {
+                    return `${metric.formula} as ${quote(v.displayName || metric.name)}`;
+                }
                 const table = findTableForField(v.field, modelConfig, allDiscoveredTables);
                 return `${v.aggregation}(${quote(table)}.${quote(v.field)}) as ${quote(v.displayName || `${v.aggregation}_of_${v.field}`)}`;
             })

@@ -21,13 +21,16 @@ interface SidebarProps {
   suggestedPrompts: string[];
   chatMessages: ChatMessage[];
   dispatch: React.Dispatch<AppAction>;
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string, modelId: string) => void;
+  onCancelAI?: () => void;
   isAiLoading: boolean;
   // Cloud Persistence
   chatThreads?: import('../types').ChatThread[];
   currentThreadId?: string | null;
   onSelectThread?: (threadId: string) => void;
   onNewChat?: () => void;
+  metrics: import('../types').Metric[];
+  hiddenFields: Set<string>;
 }
 
 type SidebarTab = 'fields' | 'chat';
@@ -88,6 +91,8 @@ const Sidebar: React.FC<SidebarProps> = (props) => {
             fieldGroups={fieldGroups}
             allAvailableFields={availableFields}
             fieldAliases={props.fieldAliases}
+            metrics={props.metrics}
+            hiddenFields={props.hiddenFields}
           />
         ) : (
           isGuest ? (
@@ -124,6 +129,7 @@ const Sidebar: React.FC<SidebarProps> = (props) => {
                 suggestedPrompts={props.suggestedPrompts}
                 chatMessages={props.chatMessages}
                 onSendMessage={props.onSendMessage}
+                onCancelAI={props.onCancelAI}
                 isLoading={props.isAiLoading}
               />
             </div>

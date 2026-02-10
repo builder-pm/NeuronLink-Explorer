@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useDrop, useDrag } from 'react-dnd';
-import { 
-    ChevronDownIcon, 
-    PlusIcon, 
-    XIcon, 
-    MoveIcon, 
-    EyeIcon, 
+import {
+    ChevronDownIcon,
+    PlusIcon,
+    XIcon,
+    MoveIcon,
+    EyeIcon,
     EyeSlashIcon,
     WandIcon,
     CalculatorIcon,
@@ -17,7 +17,7 @@ import {
     EditIcon,
     RefreshIcon
 } from './icons';
-import { FieldGroups, ItemTypes, FieldAliases, FieldMetadata, SemanticDataType } from '../types';
+import { FieldGroups, ItemTypes, FieldAliases, FieldMetadata, SemanticDataType, Metric } from '../types';
 import { prettifyFieldName, getTableName } from '../utils/stringUtils';
 
 interface FieldGroupingPanelProps {
@@ -36,6 +36,7 @@ interface FieldGroupingPanelProps {
     isScanningAll?: boolean;
     scanProgress?: { current: number; total: number; label: string };
     allFields: string[];
+    metrics?: Metric[];
 }
 
 interface DraggableFieldProps {
@@ -50,6 +51,7 @@ interface DraggableFieldProps {
     onToggleVisibility: () => void;
     onMetadataChange: (metadata: Partial<FieldMetadata>) => void;
     onScanValues: () => Promise<void>;
+    metric?: Metric;
 }
 
 const DraggableField: React.FC<DraggableFieldProps> = ({
@@ -63,12 +65,21 @@ const DraggableField: React.FC<DraggableFieldProps> = ({
     onRename,
     onToggleVisibility,
     onMetadataChange,
-    onScanValues
+    onScanValues,
+    metric
 }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [editValue, setEditValue] = useState(displayName);
-    const [description, setDescription] = useState(metadata?.description || '');
+    const [description, setDescription] = useState(metadata?.description || metric?.description || '');
+
+    // Sync editValue with displayName when not editing
+    useEffect(() => {
+        if (!isEditing) {
+            setEditValue(displayName);
+        }
+    }, [displayName, isEditing]);
+
     const [isScanning, setIsScanning] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const dragRef = useRef<HTMLDivElement>(null);
@@ -136,7 +147,11 @@ const DraggableField: React.FC<DraggableFieldProps> = ({
     return (
         <div ref={dragRef} className={`flex flex-col group/field ${isDragging ? 'opacity-50' : ''}`}>
             <div className="flex items-center p-1 pl-2 text-sm cursor-grab">
-                <MoveIcon className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
+                {metric ? (
+                    <CalculatorIcon className="h-4 w-4 text-primary mr-2 shrink-0" />
+                ) : (
+                    <MoveIcon className={`h-4 w-4 text-muted-foreground mr-2 shrink-0`} />
+                )}
                 <div className="flex-1 min-w-0 mr-2">
                     {isEditing ? (
                         <input
@@ -229,36 +244,38 @@ const DraggableField: React.FC<DraggableFieldProps> = ({
                             <option value="boolean">Boolean (True/False)</option>
                         </select>
                     </div>
-                    <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                            <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Sample Values</label>
-                            <button
-                                onClick={handleScanValues}
-                                disabled={isScanning}
-                                className="px-2 py-0.5 text-[9px] font-bold uppercase bg-muted hover:bg-muted/80 border border-border disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isScanning ? 'Scanning...' : 'Scan'}
-                            </button>
-                        </div>
-                        {sampleValues && sampleValues.length > 0 ? (
-                            <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto p-2 bg-background border border-border">
-                                {sampleValues.slice(0, 10).map((val, i) => (
-                                    <span key={i} className="px-1.5 py-0.5 text-[10px] bg-muted border border-border truncate max-w-[100px]" title={val}>
-                                        {val}
-                                    </span>
-                                ))}
-                                {sampleValues.length > 10 && (
-                                    <span className="px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                                        +{sampleValues.length - 10} more
-                                    </span>
-                                )}
+                    {!metric && (
+                        <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Sample Values</label>
+                                <button
+                                    onClick={handleScanValues}
+                                    disabled={isScanning}
+                                    className="px-2 py-0.5 text-[9px] font-bold uppercase bg-muted hover:bg-muted/80 border border-border disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isScanning ? 'Scanning...' : 'Scan'}
+                                </button>
                             </div>
-                        ) : (
-                            <p className="text-[10px] text-muted-foreground italic p-2 bg-background border border-border">
-                                Not scanned yet
-                            </p>
-                        )}
-                    </div>
+                            {sampleValues && sampleValues.length > 0 ? (
+                                <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto p-2 bg-background border border-border">
+                                    {sampleValues.slice(0, 10).map((val, i) => (
+                                        <span key={i} className="px-1.5 py-0.5 text-[10px] bg-muted border border-border truncate max-w-[100px]" title={val}>
+                                            {val}
+                                        </span>
+                                    ))}
+                                    {sampleValues.length > 10 && (
+                                        <span className="px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                                            +{sampleValues.length - 10} more
+                                        </span>
+                                    )}
+                                </div>
+                            ) : (
+                                <p className="text-[10px] text-muted-foreground italic p-2 bg-background border border-border">
+                                    Not scanned yet
+                                </p>
+                            )}
+                        </div>
+                    )}
                     <div className="flex justify-end gap-2 pt-2 border-t border-border">
                         <button
                             onClick={() => setShowSettings(false)}
@@ -307,6 +324,7 @@ interface DraggableGroupProps {
     onFieldVisibilityToggle: (fieldKey: string, isHidden: boolean) => void;
     onMetadataChange: (fieldKey: string, metadata: Partial<FieldMetadata>) => void;
     onScanValues: (fieldKey: string) => Promise<void>;
+    metrics: Metric[];
 }
 
 const GroupDropZone: React.FC<DraggableGroupProps> = ({
@@ -322,7 +340,8 @@ const GroupDropZone: React.FC<DraggableGroupProps> = ({
     onFieldRename,
     onFieldVisibilityToggle,
     onMetadataChange,
-    onScanValues
+    onScanValues,
+    metrics
 }) => {
     const dropRef = useRef<HTMLDivElement>(null);
     const [{ isOver }, drop] = useDrop(() => ({
@@ -359,31 +378,35 @@ const GroupDropZone: React.FC<DraggableGroupProps> = ({
                 </div>
             </summary>
             <div ref={dropRef} className={`p-1 space-y-0.5 min-h-[2rem] transition-colors ${isOver ? 'bg-primary/10' : 'bg-transparent'}`}>
-                {fields.map((field, index) => (
-                    <div key={field} className="flex items-start justify-between hover:bg-muted group/row">
-                        <div className="flex-1">
-                            <DraggableField
-                                fieldName={field}
-                                groupName={groupName}
-                                fieldIndex={index}
-                                displayName={fieldAliases[field] || prettifyFieldName(field)}
-                                isHidden={hiddenFields.has(field)}
-                                metadata={fieldMetadata[field]}
-                                sampleValues={sampleValues[field]}
-                                onRename={(newName) => onFieldRename(field, newName)}
-                                onToggleVisibility={() => onFieldVisibilityToggle(field, !hiddenFields.has(field))}
-                                onMetadataChange={(metadata) => onMetadataChange(field, metadata)}
-                                onScanValues={() => onScanValues(field)}
-                            />
+                {fields.map((field, index) => {
+                    const metric = metrics.find(m => m.id === field);
+                    return (
+                        <div key={field} className="flex items-start justify-between hover:bg-muted group/row">
+                            <div className="flex-1">
+                                <DraggableField
+                                    fieldName={field}
+                                    groupName={groupName}
+                                    fieldIndex={index}
+                                    displayName={fieldAliases[field] || (metric ? metric.name : prettifyFieldName(field))}
+                                    isHidden={hiddenFields.has(field)}
+                                    metadata={fieldMetadata[field]}
+                                    sampleValues={sampleValues[field]}
+                                    onRename={(newName) => onFieldRename(field, newName)}
+                                    onToggleVisibility={() => onFieldVisibilityToggle(field, !hiddenFields.has(field))}
+                                    onMetadataChange={(metadata) => onMetadataChange(field, metadata)}
+                                    onScanValues={() => onScanValues(field)}
+                                    metric={metric}
+                                />
+                            </div>
+                            <button
+                                onClick={() => onRemoveField(groupName, field)}
+                                className="p-1 mt-1 opacity-0 group-hover/row:opacity-100 hover:bg-destructive hover:text-destructive-foreground transition-all shrink-0 mr-1"
+                            >
+                                <XIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
                         </div>
-                        <button
-                            onClick={() => onRemoveField(groupName, field)}
-                            className="p-1 mt-1 opacity-0 group-hover/row:opacity-100 hover:bg-destructive hover:text-destructive-foreground transition-all shrink-0 mr-1"
-                        >
-                            <XIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                        </button>
-                    </div>
-                ))}
+                    );
+                })}
                 {fields.length === 0 && <p className="text-[10px] text-muted-foreground text-center py-4 italic">Empty group</p>}
             </div>
         </details>
@@ -405,7 +428,8 @@ const FieldGroupingPanel: React.FC<FieldGroupingPanelProps> = ({
     onScanAll,
     isScanningAll,
     scanProgress,
-    allFields
+    allFields,
+    metrics = []
 }) => {
     const [newGroupName, setNewGroupName] = useState('');
     const [showTemplates, setShowTemplates] = useState(false);
@@ -538,8 +562,8 @@ const FieldGroupingPanel: React.FC<FieldGroupingPanelProps> = ({
                             <p className="text-[10px] font-mono text-muted-foreground truncate">{scanProgress.label}</p>
                         </div>
                         <div className="w-full bg-muted border-2 border-border h-4 relative">
-                            <div 
-                                className="bg-primary h-full transition-all duration-300" 
+                            <div
+                                className="bg-primary h-full transition-all duration-300"
                                 style={{ width: `${(scanProgress.current / scanProgress.total) * 100}%` }}
                             />
                             <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-black mix-blend-difference">
@@ -634,6 +658,7 @@ const FieldGroupingPanel: React.FC<FieldGroupingPanelProps> = ({
                             onFieldVisibilityToggle={onFieldVisibilityToggle}
                             onMetadataChange={onMetadataChange}
                             onScanValues={onScanValues}
+                            metrics={metrics}
                         />
                     ))}
                 </div>

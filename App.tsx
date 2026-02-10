@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useMemo, useState, memo } from 'react';
+import React, { useEffect, useCallback, useMemo, useState, useRef, memo } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import Header from './components/Header';
@@ -11,8 +11,8 @@ import TablePreviewModal from './components/TablePreviewModal';
 import ModelingSecondaryPanel from './components/ModelingSecondaryPanel';
 import ModelingPrimaryPanel from './components/ModelingPrimaryPanel';
 import MasterView from './components/views/MasterView';
-import { DataRow, PanelType, AIAction, Filter, PivotConfig, DatabaseType, AthenaCredentials, SupabaseCredentials, AppState, AppView, FieldGroups, Join, ModelConfiguration, FieldAliases } from './types';
-import { generatePrompts } from './utils/promptSuggestions';
+import { DataRow, PanelType, AIAction, Filter, PivotConfig, DatabaseType, AthenaCredentials, SupabaseCredentials, AppState, AppView, FieldGroups, Join, ModelConfiguration, FieldAliases, AggregationType } from './types';
+import { generatePrompts, PromptContext } from './utils/promptSuggestions';
 import { useAppState, useAppDispatch } from './state/context';
 import { ActionType, AppAction } from './state/actions';
 import { generateQuery, generatePreviewQuery } from './utils/dataProcessing';
@@ -24,15 +24,16 @@ import { appSupabase } from './services/appSupabase';
 import { syncSchemaRegistry } from './services/schemaRegistry';
 import { initLogging, logEvent } from './services/logger';
 import AuthModal from './components/AuthModal'; // Import Auth Modal
-import { ErrorBoundary } from 'react-error-boundary';
+import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
+import { validateMetricAvailability } from './utils/metricValidator';
 
 // Error Boundary Fallback component
-const ErrorFallback = ({ error, resetErrorBoundary }: { error: Error, resetErrorBoundary: () => void }) => (
+const ErrorFallback = ({ error, resetErrorBoundary }: FallbackProps) => (
   <div className="h-full w-full flex flex-col items-center justify-center p-6 bg-card border-4 border-destructive shadow-brutal text-center space-y-4">
     <div className="text-4xl">⚠️</div>
     <h3 className="text-xl font-bold font-mono">Component Crashed</h3>
     <p className="text-muted-foreground text-sm max-w-md font-mono">
-      {error.message}
+      {error instanceof Error ? error.message : String(error)}
     </p>
     <button
       onClick={resetErrorBoundary}
@@ -111,7 +112,7 @@ interface PrimaryPanelProps {
   executeQuery: (query: string) => Promise<DataRow[]>;
   availableFields: string[];
   dispatch: React.Dispatch<AppAction>;
-  onSendMessage: (text: string) => void;
+  onSendMessage: (text: string, modelId: string) => void;
   isAiLoading: boolean;
   isDemoMode: boolean;
   fieldAliases: FieldAliases;
@@ -121,6 +122,10 @@ interface PrimaryPanelProps {
   modelConfiguration: ModelConfiguration;
   confirmedModelConfiguration: ModelConfiguration;
   joins: Join[];
+  onCancelAI?: () => void;
+  onCancelAI?: () => void;
+  metrics: import('./types').Metric[];
+  hiddenFields: Set<string>;
 }
 
 const PrimaryPanelComponent: React.FC<PrimaryPanelProps> = ({
@@ -128,7 +133,7 @@ const PrimaryPanelComponent: React.FC<PrimaryPanelProps> = ({
   executeQuery, availableFields, dispatch,
   onSendMessage, isAiLoading,
   isDemoMode, fieldAliases, isGuest,
-  modelConfiguration, confirmedModelConfiguration, joins, state
+  modelConfiguration, confirmedModelConfiguration, joins, state, onCancelAI, metrics, hiddenFields
 }) => {
   if (currentView === 'analysis') {
     return (
@@ -139,26 +144,29 @@ const PrimaryPanelComponent: React.FC<PrimaryPanelProps> = ({
         onAIAction={onAIAction}
         fieldGroups={fieldGroups}
         executeQuery={executeQuery}
-        availableFields={availableFields} // This receives state.selectedFields from parent
+        availableFields={availableFields}
         fieldAliases={fieldAliases}
         isGuest={isGuest}
         semanticContext={{
-          configName: 'Current Config',
+          configName: state.configName,
           view: currentView,
-          modelConfiguration: isDemoMode ? {} : (Object.keys(modelConfiguration).length > 0 ? modelConfiguration : confirmedModelConfiguration),
+          modelConfiguration: confirmedModelConfiguration, // Use confirmed for AI context in Analysis
           joins: joins,
           fieldAliases: fieldAliases,
-          fieldMetadata: state.fieldMetadata,
-          sampleValues: state.sampleValues,
-          schemaRegistry: state.schemaRegistry,
-          metrics: state.metrics
+          metrics: metrics
         }}
-        suggestedPrompts={useMemo(() => generatePrompts(fieldGroups), [fieldGroups])}
+        suggestedPrompts={[]}
         chatMessages={state.chatMessages}
         dispatch={dispatch}
         onSendMessage={onSendMessage}
+        onCancelAI={onCancelAI}
         isAiLoading={isAiLoading}
+        chatThreads={state.chatThreads}
+        currentThreadId={state.currentThreadId}
+        metrics={metrics}
+        hiddenFields={hiddenFields}
       />
+
     );
   }
   if (currentView === 'modeling') {
@@ -437,7 +445,8 @@ const App: React.FC = () => {
           filters,
           discoveredTables,
           state.fieldAliases,
-          analysisActiveFields
+          analysisActiveFields,
+          state.metrics
         );
 
         console.log('[App] Generated Query:', fullQueryRaw);
@@ -492,7 +501,8 @@ const App: React.FC = () => {
           filters,
           discoveredTables,
           state.fieldAliases,
-          analysisActiveFields
+          analysisActiveFields,
+          state.metrics
         );
         if (fullQuery) {
           const results = await dbService.executeQuery(fullQuery);
@@ -550,8 +560,8 @@ const App: React.FC = () => {
     dispatch({ type: ActionType.SET_ROWS_PER_PAGE, payload: value });
   }, [dispatch]);
 
-  const handleAIAction = useCallback(async (action: AIAction) => {
-    if (isGuest) return toast.error('Sign in to unlock!');
+  const handleAIAction = useCallback(async (action: AIAction): Promise<boolean> => {
+    if (isGuest) { toast.error('Sign in to unlock!'); return false; }
     if (action.action === 'pivot') {
       dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, ...action.config as Partial<PivotConfig> } });
     } else if (action.action === 'filter') {
@@ -568,23 +578,53 @@ const App: React.FC = () => {
       // Build set of all fields in the confirmed model for validation
       const activeModelConfig = Object.keys(modelConfiguration).length > 0
         ? modelConfiguration : confirmedModelConfiguration;
-      const modelFields = new Set<string>(Object.values(activeModelConfig).flat());
+
+      // Build mapping for normalization (handle table.field and plain field)
+      const qualifiedToPlain = new Map<string, string>();
+      const plainToTable = new Map<string, string>();
+      const validPlainNames = new Set<string>();
+
+      Object.entries(activeModelConfig).forEach(([table, fields]) => {
+        fields.forEach(field => {
+          qualifiedToPlain.set(`${table}.${field}`, field);
+          plainToTable.set(field, table);
+          validPlainNames.add(field);
+        });
+      });
+
+      const normalize = (f: string) => {
+        if (validPlainNames.has(f)) return f;
+        if (qualifiedToPlain.has(f)) return qualifiedToPlain.get(f)!;
+        // Case-insensitive check just in case
+        const lowerField = f.toLowerCase();
+        for (const [q, p] of qualifiedToPlain.entries()) {
+          if (q.toLowerCase() === lowerField) return p;
+        }
+        for (const p of validPlainNames) {
+          if (p.toLowerCase() === lowerField) return p;
+        }
+        return null;
+      };
 
       // Validate & filter pivot config to only include fields that exist in model
       const p = action.analysisProposal.pivotConfig;
       const f = action.analysisProposal.filters || [];
-      const validatedPivot: typeof p = {
-        rows: p.rows.filter(field => modelFields.has(field)),
-        columns: p.columns.filter(field => modelFields.has(field)),
-        values: p.values.filter(v => modelFields.has(v.field)),
+
+      const validatedPivot = {
+        rows: p.rows.map(normalize).filter((f): f is string => f !== null),
+        columns: p.columns.map(normalize).filter((f): f is string => f !== null),
+        values: p.values.map(v => ({ ...v, field: normalize(v.field) })).filter((v): v is { field: string; aggregation: AggregationType; displayName?: string } => v.field !== null),
       };
-      const validatedFilters = f.filter(filt => modelFields.has(filt.field));
+
+      const validatedFilters = f.map(filt => ({ ...filt, field: normalize(filt.field) })).filter((filt): filt is Filter => filt.field !== null);
 
       const droppedFields = [
-        ...p.rows.filter(field => !modelFields.has(field)),
-        ...p.columns.filter(field => !modelFields.has(field)),
-        ...p.values.filter(v => !modelFields.has(v.field)).map(v => v.field),
+        ...p.rows.filter(field => !normalize(field)),
+        ...p.columns.filter(field => !normalize(field)),
+        ...p.values.filter(v => !normalize(v.field)).map(v => v.field),
+        ...f.filter(filt => !normalize(filt.field)).map(filt => filt.field)
       ];
+
       if (droppedFields.length > 0) {
         console.warn('[AI] Dropped fields not in model:', droppedFields);
         toast.error(`AI suggested fields not in model: ${droppedFields.join(', ')}`);
@@ -592,7 +632,7 @@ const App: React.FC = () => {
 
       if (validatedPivot.rows.length === 0 && validatedPivot.values.length === 0 && validatedPivot.columns.length === 0) {
         toast.error("AI suggested fields that aren't in your model. Try adding them from the Structure tab first.");
-        return;
+        return false;
       }
 
       dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: validatedPivot });
@@ -639,20 +679,36 @@ const App: React.FC = () => {
       dispatch({ type: ActionType.CONFIRM_MODEL });
       toast.success(`Added ${action.suggestedFields.length} table(s) to your model!`, { icon: '✨' });
     }
-  }, [dispatch, pivotConfig, isGuest, currentView, modelConfiguration, joins, confirmedModelConfiguration]);
+    return true;
+  }, [dispatch, pivotConfig, isGuest, currentView, modelConfiguration, joins, confirmedModelConfiguration, analysisActiveFields]);
 
-  const handleSendChatMessage = useCallback(async (text: string) => {
+  // AbortController for cancelling in-flight AI requests
+  const aiAbortControllerRef = useRef<AbortController | null>(null);
+
+  const handleCancelAI = useCallback(() => {
+    if (aiAbortControllerRef.current) {
+      aiAbortControllerRef.current.abort();
+      aiAbortControllerRef.current = null;
+    }
+  }, []);
+
+  const handleSendChatMessage = useCallback(async (text: string, modelId: string) => {
     if (text.trim() === '' || state.isAiLoading) return;
 
     const userMessage: import('./types').ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      text: text.trim()
+      text: text.trim(),
+      timestamp: Date.now()
     };
 
     // Dispatch User Message
     dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: userMessage });
     dispatch({ type: ActionType.SET_AI_LOADING, payload: true });
+
+    // Create AbortController for this request
+    const abortController = new AbortController();
+    aiAbortControllerRef.current = abortController;
 
     // Cloud Persistence: Create thread if needed, save message
     let activeThreadId = state.currentThreadId;
@@ -691,14 +747,15 @@ const App: React.FC = () => {
       };
 
       const { getAIResponse, getAIResponseWithData } = await import('./services/gemini');
-      const { action, textResponse } = await getAIResponse(history, userMessage.text, context);
+      const { action, textResponse } = await getAIResponse(history, userMessage.text, context, modelId, abortController.signal);
 
       if (action?.action === 'query' && action.query) {
         const initialModelMessage: import('./types').ChatMessage = {
           id: (Date.now() + 1).toString(),
           role: 'model',
           text: textResponse,
-          isLoading: true
+          isLoading: true,
+          timestamp: Date.now()
         };
         dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: initialModelMessage });
         if (activeThreadId) {
@@ -710,12 +767,14 @@ const App: React.FC = () => {
           queryResult = await dbService.executeQuery(action.query);
         }
 
-        const finalResponse = await getAIResponseWithData(userMessage.text, action.query, queryResult);
+        const finalResponse = await getAIResponseWithData(userMessage.text, action.query, queryResult, modelId);
 
         const finalModelMessage: import('./types').ChatMessage = {
           id: (Date.now() + 2).toString(),
           role: 'model',
-          text: finalResponse
+          text: finalResponse,
+          timestamp: Date.now(),
+          appliedAction: action
         };
         dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: finalModelMessage });
         if (activeThreadId) {
@@ -727,20 +786,24 @@ const App: React.FC = () => {
           id: (Date.now() + 1).toString(),
           role: 'model',
           text: textResponse,
-          suggestAction: action
+          suggestAction: action,
+          timestamp: Date.now()
         };
         dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: modelMessage });
         if (activeThreadId) {
           await chatService.addMessage(activeThreadId, modelMessage);
         }
       } else {
+        let actionApplied = false;
         if (action) {
-          handleAIAction(action);
+          actionApplied = await handleAIAction(action);
         }
         const modelMessage: import('./types').ChatMessage = {
           id: (Date.now() + 1).toString(),
           role: 'model',
-          text: textResponse
+          text: textResponse,
+          timestamp: Date.now(),
+          appliedAction: actionApplied ? action! : undefined
         };
         dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: modelMessage });
 
@@ -751,17 +814,29 @@ const App: React.FC = () => {
       }
 
     } catch (error: any) {
-      console.error("Error fetching AI response:", error);
-      const errorMessage: import('./types').ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'model',
-        text: 'Sorry, I encountered an error. Please try again.'
-      };
-      dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: errorMessage });
-      if (activeThreadId) {
-        await chatService.addMessage(activeThreadId, errorMessage);
+      if (error?.name === 'AbortError') {
+        const cancelMessage: import('./types').ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'model',
+          text: 'Request cancelled.',
+          timestamp: Date.now()
+        };
+        dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: cancelMessage });
+      } else {
+        console.error("Error fetching AI response:", error);
+        const errorMessage: import('./types').ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'model',
+          text: 'Sorry, I encountered an error. Please try again.',
+          timestamp: Date.now()
+        };
+        dispatch({ type: ActionType.ADD_CHAT_MESSAGE, payload: errorMessage });
+        if (activeThreadId) {
+          await chatService.addMessage(activeThreadId, errorMessage);
+        }
       }
     } finally {
+      aiAbortControllerRef.current = null;
       dispatch({ type: ActionType.SET_AI_LOADING, payload: false });
     }
   }, [dispatch, state.isAiLoading, state.chatMessages, configName, currentView, isDemoMode, modelConfiguration, confirmedModelConfiguration, joins, state.fieldAliases, state.fieldMetadata, state.sampleValues, state.schemaRegistry, state.metrics, dbService, handleAIAction, state.currentUser, state.currentThreadId]);
@@ -778,13 +853,31 @@ const App: React.FC = () => {
 
     // 2. Sync Pivot Config
     if (isSelected) {
-      // If selecting, add to rows if not present in any zone (default behavior)
-      const inRows = pivotConfig.rows.includes(field);
-      const inCols = pivotConfig.columns.includes(field);
-      const inVals = pivotConfig.values.some(v => v.field === field);
+      // Check if this is a metric
+      const isMetric = state.metrics.some(m => m.id === field);
 
-      if (!inRows && !inCols && !inVals) {
-        dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, rows: [...pivotConfig.rows, field] } });
+      if (isMetric) {
+        // If selecting a metric, add to values if not already there
+        const inVals = pivotConfig.values.some(v => v.field === field);
+        if (!inVals) {
+          const metric = state.metrics.find(m => m.id === field);
+          dispatch({
+            type: ActionType.SET_PIVOT_CONFIG,
+            payload: {
+              ...pivotConfig,
+              values: [...pivotConfig.values, { field, aggregation: 'SUM' as AggregationType, displayName: metric?.name || field }]
+            }
+          });
+        }
+      } else {
+        // If selecting a dimension, add to rows if not present in any zone
+        const inRows = pivotConfig.rows.includes(field);
+        const inCols = pivotConfig.columns.includes(field);
+        const inVals = pivotConfig.values.some(v => v.field === field);
+
+        if (!inRows && !inCols && !inVals) {
+          dispatch({ type: ActionType.SET_PIVOT_CONFIG, payload: { ...pivotConfig, rows: [...pivotConfig.rows, field] } });
+        }
       }
     } else {
       // If unselecting, remove from ALL zones to keep state consistent
@@ -802,7 +895,7 @@ const App: React.FC = () => {
         }
       });
     }
-  }, [dispatch, analysisActiveFields, pivotConfig]);
+  }, [dispatch, analysisActiveFields, pivotConfig, state.metrics]);
 
 
   const handleTestConnection = useCallback(async (type: DatabaseType, creds: AthenaCredentials | SupabaseCredentials | null) => {
@@ -850,24 +943,32 @@ const App: React.FC = () => {
       ? modelConfiguration
       : confirmedModelConfiguration;
 
-    if (Object.keys(config).length === 0) {
-      return [];
+    const fields = new Set<string>();
+
+    if (Object.keys(config).length > 0) {
+      for (const tableName in config) {
+        config[tableName].forEach(f => fields.add(f));
+      }
     }
 
-    const fields = new Set<string>();
-    for (const tableName in config) {
-      config[tableName].forEach(f => fields.add(f));
-    }
+    // Always include metrics as available fields, but only if they are valid for the current config
+    state.metrics.forEach(m => {
+      const validation = validateMetricAvailability(m, config);
+      if (validation.isValid) {
+        fields.add(m.id);
+      }
+    });
+
     return Array.from(fields);
-  }, [modelConfiguration, confirmedModelConfiguration, joins]);
+  }, [modelConfiguration, confirmedModelConfiguration, state.metrics]);
 
   const dynamicFieldGroups = useMemo(() => {
     const config = Object.keys(modelConfiguration).length > 0
       ? modelConfiguration
       : confirmedModelConfiguration;
 
-    // If no tables are selected in the model, fall back to the demo fieldGroups
-    if (Object.keys(config).length === 0) {
+    // If no tables are selected in the model and no metrics, fall back to the demo fieldGroups
+    if (Object.keys(config).length === 0 && state.metrics.length === 0) {
       return fieldGroups;
     }
 
@@ -881,7 +982,12 @@ const App: React.FC = () => {
       fields.forEach(f => allFieldsInModel.add(f));
     });
 
-    // 2. Semantic Groups
+    // 2. Metrics Group
+    if (state.metrics.length > 0) {
+      groups['Metrics'] = state.metrics.map(m => m.id);
+    }
+
+    // 3. Semantic Groups
     const semanticGroups: { [key: string]: string[] } = {
       'Dates & Time': [],
       'Location': [],
@@ -917,7 +1023,7 @@ const App: React.FC = () => {
     groups['Uncategorized'] = [];
 
     return groups;
-  }, [modelConfiguration, confirmedModelConfiguration, fieldGroups]);
+  }, [modelConfiguration, confirmedModelConfiguration, fieldGroups, state.metrics]);
 
   const tableHeaders = useMemo(() => {
     if (processedData.length === 0) return [];
@@ -954,15 +1060,33 @@ const App: React.FC = () => {
     if (!dbService) return;
     dispatch({ type: ActionType.SET_LOADING, payload: true });
     try {
+      // Find metrics that apply to this table (i.e. all their required fields are in this table)
+      const tableInfo = discoveredTables.find(t => t.name === tableName);
+      const tableColumns = tableInfo?.fields || [];
+
+      // Create a temporary config representing just this table to check metric validity against it
+      const singleTableConfig = { [tableName]: tableColumns };
+
+      const applicableMetrics = state.metrics.filter(m => {
+        return validateMetricAvailability(m, singleTableConfig).isValid;
+      });
+
       // Use double quotes for identifiers to be compatible with SQLite/standard SQL
-      const results = await dbService.executeQuery(`SELECT * FROM "${tableName}" LIMIT 10`);
+      let query = `SELECT * FROM "${tableName}" LIMIT 10`;
+
+      if (applicableMetrics.length > 0) {
+        const metricSelections = applicableMetrics.map(m => `(${m.formula}) AS "${m.name}"`).join(', ');
+        query = `SELECT *, ${metricSelections} FROM "${tableName}" LIMIT 10`;
+      }
+
+      const results = await dbService.executeQuery(query);
       setPreviewData({ name: tableName, data: results });
     } catch (e: any) {
       toast.error(`Failed to preview table: ${e.message}`);
     } finally {
       dispatch({ type: ActionType.SET_LOADING, payload: false });
     }
-  }, [dbService, dispatch]);
+  }, [dbService, dispatch, state.metrics, discoveredTables]);
 
   const executeQuery = useCallback(async (query: string) => {
     if (!dbService) return [];
@@ -1114,6 +1238,7 @@ const App: React.FC = () => {
                     availableFields={availableFields}
                     dispatch={dispatch}
                     onSendMessage={handleSendChatMessage}
+                    onCancelAI={handleCancelAI}
                     isAiLoading={state.isAiLoading || false}
                     isDemoMode={isDemoMode}
                     fieldAliases={state.fieldAliases}
@@ -1121,6 +1246,8 @@ const App: React.FC = () => {
                     state={state} modelConfiguration={state.modelConfiguration}
                     confirmedModelConfiguration={state.confirmedModelConfiguration}
                     joins={state.joins}
+                    metrics={state.metrics}
+                    hiddenFields={state.hiddenFields}
                   />
                 </ErrorBoundary>
               </div>

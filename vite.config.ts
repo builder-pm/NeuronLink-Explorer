@@ -18,6 +18,15 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       }
+    },
+    server: {
+      proxy: {
+        '/api/ai-engine': {
+          target: 'https://integrate.api.nvidia.com',
+          changeOrigin: true,
+          rewrite: (path: string) => path.replace(/^\/api\/ai-engine/, '/v1/chat/completions'),
+        }
+      }
     }
   };
 });

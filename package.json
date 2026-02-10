@@ -29,6 +29,8 @@
     "react-dom": "^19.1.0",
     "react-error-boundary": "^6.1.0",
     "react-hot-toast": "^2.4.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "sql-formatter": "^15.3.2",
     "sql.js": "1.10.3",
     "xlsx": "0.18.5"

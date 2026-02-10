@@ -11,6 +11,8 @@ interface DataFieldsPanelProps {
     fieldGroups: FieldGroups;
     allAvailableFields: string[];
     fieldAliases: FieldAliases;
+    metrics: import('../types').Metric[];
+    hiddenFields: Set<string>;
 }
 
 interface DraggableFieldItemProps {
@@ -58,12 +60,15 @@ const DraggableFieldItem: React.FC<DraggableFieldItemProps> = ({ field, alias, i
 };
 
 
-const DataFieldsPanel: React.FC<DataFieldsPanelProps> = ({ selectedFields, onFieldChange, fieldGroups, allAvailableFields, fieldAliases }) => {
+const DataFieldsPanel: React.FC<DataFieldsPanelProps> = ({ selectedFields, onFieldChange, fieldGroups, allAvailableFields, fieldAliases, metrics, hiddenFields }) => {
     const [searchTerm, setSearchTerm] = useState('');
 
     const displayedGroups = useMemo(() => {
+        // Filter out hidden fields first
+        const visibleAvailableFields = allAvailableFields.filter(f => !hiddenFields.has(f));
+
         const allGroupedFields = new Set(Object.values(fieldGroups).flat());
-        const uncategorized = allAvailableFields.filter(f => !allGroupedFields.has(f));
+        const uncategorized = visibleAvailableFields.filter(f => !allGroupedFields.has(f));
 
         const fullFieldGroups: FieldGroups = { ...fieldGroups };
         if (uncategorized.length > 0) {
@@ -76,8 +81,10 @@ const DataFieldsPanel: React.FC<DataFieldsPanelProps> = ({ selectedFields, onFie
             const uniqueFields = [...new Set(fieldsInGroup)];
             const visibleFields = uniqueFields
                 .filter(field => {
-                    if (seenFields.has(field)) return false;
-                    const exists = allAvailableFields.includes(field);
+                    // Check if field is hidden or already seen
+                    if (hiddenFields.has(field) || seenFields.has(field)) return false;
+
+                    const exists = visibleAvailableFields.includes(field);
                     const matchesSearch = field.toLowerCase().includes(searchTerm.toLowerCase());
                     if (exists && matchesSearch) {
                         seenFields.add(field);
@@ -88,7 +95,7 @@ const DataFieldsPanel: React.FC<DataFieldsPanelProps> = ({ selectedFields, onFie
 
             return { groupName, fields: visibleFields };
         }).filter(group => group.fields.length > 0);
-    }, [fieldGroups, allAvailableFields, searchTerm]);
+    }, [fieldGroups, allAvailableFields, searchTerm, hiddenFields]);
 
     return (
         <div className="flex flex-col h-full">
@@ -118,15 +125,20 @@ const DataFieldsPanel: React.FC<DataFieldsPanelProps> = ({ selectedFields, onFie
                             <ChevronDownIcon className="h-5 w-5 text-muted-foreground group-open/sub:rotate-180 transition-transform" />
                         </summary>
                         <div className="pl-4 pt-1 border-l-2 border-border ml-2">
-                            {fields.map(field => (
-                                <DraggableFieldItem
-                                    key={field}
-                                    field={field}
-                                    isChecked={selectedFields.includes(field)}
-                                    onToggle={onFieldChange}
-                                    alias={fieldAliases[`${groupName.toLowerCase()}.${field}`] || fieldAliases[`${groupName}.${field}`]}
-                                />
-                            ))}
+                            {fields.map(field => {
+                                const metric = metrics.find(m => m.id === field);
+                                const displayName = metric ? metric.name : (fieldAliases[`${groupName.toLowerCase()}.${field}`] || fieldAliases[`${groupName}.${field}`] || prettifyFieldName(field));
+
+                                return (
+                                    <DraggableFieldItem
+                                        key={field}
+                                        field={field}
+                                        isChecked={selectedFields.includes(field)}
+                                        onToggle={onFieldChange}
+                                        alias={metric ? displayName : (fieldAliases[`${groupName.toLowerCase()}.${field}`] || fieldAliases[`${groupName}.${field}`])}
+                                    />
+                                );
+                            })}
                         </div>
                     </details>
                 )) : (

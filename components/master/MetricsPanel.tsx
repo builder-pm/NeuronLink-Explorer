@@ -7,7 +7,8 @@ import {
     CalculatorIcon,
     EditIcon,
     TrashIcon,
-    AlertTriangleIcon
+    AlertTriangleIcon,
+    RefreshIcon
 } from '../icons';
 import { validateMetricAvailability } from '../../utils/metricValidator';
 import { MetricBuilderModal } from '../MetricBuilderModal';
@@ -106,14 +107,20 @@ const MetricsPanel: React.FC<MetricsPanelProps> = ({ state, dispatch }) => {
         }
     }
 
-    const availableFields = getAvailableFieldsFromConfig(state.confirmedModelConfiguration);
+    const activeConfig = React.useMemo(() => {
+        return Object.keys(state.modelConfiguration).length > 0
+            ? state.modelConfiguration
+            : state.confirmedModelConfiguration;
+    }, [state.modelConfiguration, state.confirmedModelConfiguration]);
+
+    const availableFields = getAvailableFieldsFromConfig(activeConfig);
 
     const validatedMetrics = React.useMemo(() => {
         return state.metrics.map(metric => ({
             ...metric,
-            validation: validateMetricAvailability(metric, state.confirmedModelConfiguration || {})
+            validation: validateMetricAvailability(metric, activeConfig || {})
         }));
-    }, [state.metrics, state.confirmedModelConfiguration]);
+    }, [state.metrics, activeConfig]);
 
     return (
         <div className="border-b border-border">
@@ -126,7 +133,19 @@ const MetricsPanel: React.FC<MetricsPanelProps> = ({ state, dispatch }) => {
                     <CalculatorIcon className="h-4 w-4 text-primary" />
                     <span className="font-black text-xs uppercase tracking-widest">CALCULATED METRICS</span>
                 </div>
-                <ChevronRightIcon className={`h-4 w-4 transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (configId) loadMetricsForConfig(configId);
+                        }}
+                        className="p-1 hover:bg-muted rounded transition-colors"
+                        title="Refresh Metrics"
+                    >
+                        <RefreshIcon className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+                    </button>
+                    <ChevronRightIcon className={`h-4 w-4 transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
+                </div>
             </button>
 
             {isExpanded && (

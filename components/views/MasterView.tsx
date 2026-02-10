@@ -7,12 +7,11 @@ import StructurePanel from '../master/StructurePanel';
 import SemanticModelViewerPanel from '../master/SemanticModelViewerPanel';
 import FieldGroupingPanel from '../FieldGroupingPanel';
 import GlobalFiltersPanel from '../master/GlobalFiltersPanel';
-import ContextPanel from '../master/ContextPanel';
 import ConfigManagerModal from '../ConfigManagerModal';
 import SaveConfigModal from '../SaveConfigModal';
 import { AppState, DataRow, DatabaseType } from '../../types';
 import { AppAction, ActionType } from '../../state/actions';
-import { SettingsIcon, EyeIcon, RotateCcwIcon, XIcon, SqlIcon, DatabaseIcon, TableIcon, FolderIcon, PlusIcon } from '../icons';
+import { SettingsIcon, EyeIcon, RotateCcwIcon, XIcon, SqlIcon, TableIcon, FolderIcon, PlusIcon, BrainCircuitIcon } from '../icons';
 import toast from 'react-hot-toast';
 import { X, Search } from 'lucide-react';
 import * as db from '../../services/database';
@@ -22,11 +21,8 @@ interface CentralAreaProps {
     children: React.ReactNode;
     sqlEditor: React.ReactNode;
     showSql: boolean;
-    contextPreview: React.ReactNode;
-    showContext: boolean;
     // Header Props
     onToggleSql: () => void;
-    onToggleContext: () => void;
     isConnecting: boolean;
     isConnected: boolean;
     dbType: string;
@@ -39,9 +35,9 @@ interface CentralAreaProps {
 }
 
 const CentralArea: React.FC<CentralAreaProps> = ({
-    children, sqlEditor, showSql, contextPreview, showContext,
-    onToggleSql, onToggleContext, isConnecting, isConnected, dbType, onRefreshData, onConfigureCredentialsClick,
-    isModelDirty, onConfirmModel, onLoadClick, onSaveClick // Destructure
+    children, sqlEditor, showSql,
+    onToggleSql, isConnecting, isConnected, dbType, onRefreshData, onConfigureCredentialsClick,
+    isModelDirty, onConfirmModel, onLoadClick, onSaveClick
 }) => {
     return (
         <div className="flex-1 relative flex flex-col h-full overflow-hidden bg-background min-w-0">
@@ -49,7 +45,7 @@ const CentralArea: React.FC<CentralAreaProps> = ({
             <div className="h-14 border-b border-border flex items-center justify-between px-4 bg-card shrink-0 z-20 relative">
                 <div className="flex items-center space-x-4">
                     <h2 className="text-xl font-bold text-foreground uppercase tracking-wide font-mono">Data Model</h2>
-                    
+
                     <div className="flex items-center gap-2 border-l border-border pl-4">
                         <button
                             onClick={onLoadClick}
@@ -109,14 +105,6 @@ const CentralArea: React.FC<CentralAreaProps> = ({
                         <SqlIcon className="h-4 w-4" />
                         <span className="text-xs font-bold">SQL</span>
                     </button>
-                    <button
-                        onClick={onToggleContext}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-md transition-all border ${showContext ? 'bg-primary text-black border-primary' : 'text-muted-foreground border-transparent hover:bg-muted hover:text-foreground'}`}
-                        title="Semantic Context"
-                    >
-                        <DatabaseIcon className="h-4 w-4" />
-                        <span className="text-xs font-bold">CONTEXT</span>
-                    </button>
                 </div>
             </div>
 
@@ -129,18 +117,6 @@ const CentralArea: React.FC<CentralAreaProps> = ({
                     <div className="absolute inset-0 bg-card z-10 flex flex-col animate-in fade-in duration-200">
                         <div className="flex-1 overflow-hidden relative">
                             {sqlEditor}
-                        </div>
-                    </div>
-                )}
-
-                {/* Semantic Context Overlay */}
-                {showContext && (
-                    <div className="absolute top-4 right-4 w-[500px] max-h-[80%] bg-card z-20 border border-border rounded-lg shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95">
-                        <div className="p-3 border-b border-border bg-muted/30 font-bold text-xs uppercase tracking-wider flex justify-between">
-                            <span>Semantic Graph Context</span>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-4 prose prose-invert max-w-none text-xs">
-                            {contextPreview}
                         </div>
                     </div>
                 )}
@@ -260,6 +236,8 @@ const RowViewer = ({ row, columns, onClose }: {
     );
 };
 
+import { validateMetricAvailability } from '../../utils/metricValidator';
+
 // 2. Fixed Right Panel: Tables & Preview
 const FixedRightPanel = ({ state, dispatch, onPreviewTable, previewData, onClearPreview, selectedRow, selectedRowColumns, isRowViewerActive, onCloseRowViewer }: {
     state: AppState,
@@ -276,25 +254,41 @@ const FixedRightPanel = ({ state, dispatch, onPreviewTable, previewData, onClear
     const [isScanningAll, setIsScanningAll] = useState(false);
     const [scanProgress, setScanProgress] = useState<{ current: number; total: number; label: string } | undefined>(undefined);
 
+    // Compute eligible metrics based on active model configuration
+    const eligibleMetrics = useMemo(() => {
+        const activeConfig = Object.keys(state.modelConfiguration).length > 0
+            ? state.modelConfiguration
+            : state.confirmedModelConfiguration;
+
+        return state.metrics.filter(m =>
+            validateMetricAvailability(m, activeConfig).isValid
+        );
+    }, [state.metrics, state.modelConfiguration, state.confirmedModelConfiguration]);
+
     const allFields = useMemo(() => {
-        return Object.entries(state.modelConfiguration).flatMap(([tableName, fields]) =>
+        const fields = Object.entries(state.modelConfiguration).flatMap(([tableName, fields]) =>
             fields.map(field => `${tableName}.${field}`)
         );
-    }, [state.modelConfiguration]);
+        // Include eligible metrics in allFields so they appear in FieldGroupingPanel
+        return [...fields, ...eligibleMetrics.map(m => m.id)];
+    }, [state.modelConfiguration, eligibleMetrics]);
 
     const handleScanAll = async () => {
-        if (allFields.length === 0) {
-            toast.error('No fields in model to scan.');
+        // Filter out metrics from scan list - only scan physical fields
+        const fieldsToScan = allFields.filter(field => !eligibleMetrics.some(m => m.id === field));
+
+        if (fieldsToScan.length === 0) {
+            toast.error('No physical fields in model to scan.');
             return;
         }
 
         setIsScanningAll(true);
-        const total = allFields.length;
+        const total = fieldsToScan.length;
         const toastId = 'scanning-all-fields-master';
 
         try {
             for (let i = 0; i < total; i++) {
-                const fieldKey = allFields[i];
+                const fieldKey = fieldsToScan[i];
                 const [tableName, fieldName] = fieldKey.split('.');
 
                 setScanProgress({ current: i + 1, total, label: `${tableName}.${fieldName}` });
@@ -323,7 +317,7 @@ const FixedRightPanel = ({ state, dispatch, onPreviewTable, previewData, onClear
                 <RowViewer
                     row={selectedRow}
                     columns={selectedRowColumns}
-                    onClose={onCloseRowViewer || (() => {})}
+                    onClose={onCloseRowViewer || (() => { })}
                 />
             </div>
         );
@@ -358,7 +352,7 @@ const FixedRightPanel = ({ state, dispatch, onPreviewTable, previewData, onClear
                     onClick={() => setActiveTab('semantic')}
                     className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest flex flex-col items-center gap-1 ${activeTab === 'semantic' ? 'bg-muted/50 text-primary border-b-2 border-primary' : 'text-muted-foreground hover:bg-muted/20'}`}
                 >
-                    <EyeIcon className="h-4 w-4" />
+                    <BrainCircuitIcon className="h-4 w-4" />
                     <span>Semantic</span>
                 </button>
             </div>
@@ -383,6 +377,7 @@ const FixedRightPanel = ({ state, dispatch, onPreviewTable, previewData, onClear
                             hiddenFields={state.hiddenFields}
                             sampleValues={state.sampleValues}
                             allFields={allFields}
+                            metrics={eligibleMetrics}
                             onGroupsChange={(newGroups) => dispatch({ type: ActionType.SET_FIELD_GROUPS, payload: newGroups })}
                             onFieldRename={(fieldKey, alias) => dispatch({
                                 type: ActionType.SET_FIELD_ALIAS,
@@ -433,8 +428,6 @@ const FixedRightPanel = ({ state, dispatch, onPreviewTable, previewData, onClear
 
 // 3. Collapsible Drawer: Slides OUT from the LEFT of the Fixed Panel
 const CollapsibleDrawer = ({ isOpen, onClose, state, dispatch }: { isOpen: boolean, onClose: () => void, state: AppState, dispatch: React.Dispatch<AppAction> }) => {
-    // Width of fixed panel is 320px. Drawer is 350px.
-    // It should sit to the LEFT of the fixed panel.
     return (
         <div
             className={`
@@ -444,12 +437,7 @@ const CollapsibleDrawer = ({ isOpen, onClose, state, dispatch }: { isOpen: boole
                 ${isOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'}
             `}
             style={{
-                right: '320px', // Anchored to the left edge of Fixed Panel
-                // If it's closed, translate-x-full pushes it 350px to the RIGHT (under the Fixed Panel or off screeen)
-                // Wait, if it's right: 320px
-                // translate-x-full (100%) = +350px (Rightwards).
-                // So it moves INTO the Fixed Panel area (hidden behind it if Z is lower).
-                // Open (translate-x-0) = Stops at right: 320px (visible).
+                right: '320px',
             }}
         >
             <div className="flex items-center justify-between p-4 border-b border-border bg-muted/30">
@@ -465,9 +453,6 @@ const CollapsibleDrawer = ({ isOpen, onClose, state, dispatch }: { isOpen: boole
 
                 {/* Metrics Section */}
                 <MetricsPanel state={state} dispatch={dispatch} />
-
-                {/* Contexts Section */}
-                <ContextPanel state={state} dispatch={dispatch} />
             </div>
         </div>
     );
@@ -496,7 +481,6 @@ export const MasterView: React.FC<MasterViewProps> = ({
     previewData, onClearPreview
 }) => {
     const [showSqlEditor, setShowSqlEditor] = useState(false);
-    const [showContextPreview, setShowContextPreview] = useState(false);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
 
@@ -565,11 +549,9 @@ export const MasterView: React.FC<MasterViewProps> = ({
         <div className="flex flex-1 w-full h-full overflow-hidden bg-background relative">
 
             {/* 1. Central Canvas Area & Layout */}
-            {/* Wrapper ensures CentralArea takes available space left of FixedPanel */}
             <CentralArea
                 showSql={showSqlEditor}
                 onToggleSql={() => setShowSqlEditor(!showSqlEditor)}
-                onToggleContext={() => setShowContextPreview(!showContextPreview)}
                 sqlEditor={
                     <SQLPanel
                         sqlQuery={sqlQuery}
@@ -581,14 +563,6 @@ export const MasterView: React.FC<MasterViewProps> = ({
                         tables={state.discoveredTables}
                     />
                 }
-                showContext={showContextPreview}
-                contextPreview={
-                    <div className="space-y-4">
-                        <p><strong>Active Tables:</strong> {state.discoveredTables.length}</p>
-                        <p><strong>Defined Joins:</strong> {state.joins.length}</p>
-                        <p><em>Semantic context generation would appear here as markdown.</em></p>
-                    </div>
-                }
                 isConnecting={isConnecting}
                 isConnected={isConnected}
                 dbType={dbType}
@@ -596,7 +570,6 @@ export const MasterView: React.FC<MasterViewProps> = ({
                 onConfigureCredentialsClick={onConfigureCredentialsClick}
                 isModelDirty={state.isModelDirty}
                 onConfirmModel={() => {
-                    /* Placeholder: wiring to App.tsx dispatch would go here if not already handled */
                     toast.success("Model Confirmed (Mock)");
                     dispatch({ type: ActionType.CONFIRM_MODEL });
                 }}
@@ -623,7 +596,7 @@ export const MasterView: React.FC<MasterViewProps> = ({
                 </ReactFlowProvider>
             </CentralArea>
 
-            {/* 2. Collapsible Drawer (Rendered before Fixed Panel to handle Z-indexing implicitly if needed, but explicit Z used) */}
+            {/* 2. Collapsible Drawer */}
             <CollapsibleDrawer
                 isOpen={isDrawerOpen}
                 onClose={() => setIsDrawerOpen(false)}
@@ -633,7 +606,6 @@ export const MasterView: React.FC<MasterViewProps> = ({
 
             {/* 3. Fixed Right Panel (Tables/Preview) */}
             <div className="relative flex h-full z-30">
-                {/* The Main Fixed Right Panel */}
                 <FixedRightPanel
                     state={state}
                     dispatch={dispatch}

@@ -166,6 +166,8 @@ const PivotConfigPanel: React.FC<PivotConfigPanelProps & { onBatchUpdate: (confi
     const prevConfigRef = useRef<PivotConfig>(config);
     const prevFiltersRef = useRef<Filter[]>(filters);
 
+    const { metrics } = useAppState();
+
     useEffect(() => {
         // If not dirty, simple sync
         if (!isDirty) {
@@ -244,7 +246,8 @@ const PivotConfigPanel: React.FC<PivotConfigPanelProps & { onBatchUpdate: (confi
 
         if (targetZone === 'values') {
             const aggregation = dataType === 'measure' ? 'SUM' : 'COUNT';
-            newConfig.values = [...newConfig.values, { field, aggregation }];
+            const metric = metrics.find(m => m.id === field);
+            newConfig.values = [...newConfig.values, { field, aggregation, displayName: metric?.name }];
         } else {
             // Remove from other zones if it's already there (moving behavior)
             newConfig.rows = newConfig.rows.filter(f => f !== field);
@@ -309,7 +312,7 @@ const PivotConfigPanel: React.FC<PivotConfigPanelProps & { onBatchUpdate: (confi
     };
 
     return (
-        <aside className="w-72 h-full bg-card border-l-2 border-border flex flex-col shadow-brutal-left flex-shrink-0 relative">
+        <aside className="w-full h-full bg-card border-r-2 border-border flex flex-col shadow-brutal flex-shrink-0 relative">
             <div className="flex-1 overflow-y-auto pb-20">
                 <div className="p-4 border-b-2 border-border bg-card">
                     <div className="flex items-center justify-between text-sm font-semibold uppercase tracking-wide font-mono mb-2">
