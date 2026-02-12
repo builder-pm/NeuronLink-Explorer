@@ -21,9 +21,9 @@ Instead of querying the database directly, NeuronLink uses a `Schema Registry`.
 - **Decision**: The Modeling Canvas is not just a UI; it is the **compiler input**.
 - **Execution**: The `generateQuery` utility in `utils/dataProcessing.ts` traverses the node graph and active filters to deterministically generate optimized SQL. This prevents the "Black Box" issue common in other No-Code tools.
 
-### Deterministic AI (RAG-Lite)
+### Deterministic AI (NVIDIA AI Foundation)
 - **Decision**: Never send a blind prompt to the LLM.
-- **Implementation**: We inject the `SemanticContext` (Aliased field names, sampled values, and validated joins) into every prompt. This forces the AI to operate within the "guardrails" of the existing data model, drastically reducing hallucinations.
+- **Implementation**: We inject the `SemanticContext` (Aliased field names, sampled values, and validated joins) into every prompt. We leverage the **NVIDIA AI Foundation** endpoints via a server-side proxy to provide low-latency, high-precision text-to-SQL generation. This forces the AI to operate within the "guardrails" of the existing data model, drastically reducing hallucinations.
 
 ## 3. Operations & Analytics
 

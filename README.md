@@ -35,6 +35,7 @@ NeuronLink uses a **Hybrid Compute** model:
 *   **Production**: Live Supabase (Postgres) connection with Row Level Security.
 *   **Demo/Simulation**: Local WASM-based SQLite (`sql.js`) for zero-latency testing.
 *   **Cloud Warehouses**: Currently supports AWS Athena via high-fidelity simulation (designed for modular enterprise adapters).
+*   **AI Engine**: NVIDIA AI Foundation via server-side edge proxy.
 
 ### 📊 Sample Dataset
 The platform includes the **`dvdrental`** PostgreSQL sample dataset, utilized as the canonical benchmark for our Semantic Layer and Metric validation tests.
@@ -44,7 +45,7 @@ The platform includes the **`dvdrental`** PostgreSQL sample dataset, utilized as
 ### Prerequisites
 *   Node.js v18+
 *   Supabase Account (for persistence & auth)
-*   Google Gemini API Key
+*   NVIDIA API Key
 
 ### Installation
 
@@ -58,7 +59,7 @@ The platform includes the **`dvdrental`** PostgreSQL sample dataset, utilized as
 2.  **Environment Setup**
     Create `.env.local`:
     ```env
-    VITE_GEMINI_API_KEY=your_key
+    VITE_NVIDIA_API_KEY=your_key
     VITE_SUPABASE_URL=your_project_url
     VITE_SUPABASE_ANON_KEY=your_key
     ```
