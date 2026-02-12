@@ -15,7 +15,7 @@ Instead of querying the database directly, NeuronLink uses a `Schema Registry`.
 ### Hybrid Data Engine (SQLite + Supabase)
 - **Problem**: Users want a "Zero-Setup" experience but need Enterprise persistence.
 - **Solution**: We implemented `sql.js` (SQLite in WASM) for the local Demo mode (using the `dvdrental` dataset) while supporting a live Supabase connection for production-ready persistence.
-- **Simulated AWS Athena**: To demonstrate the "Lakehouse" potential without requiring costly cloud infrastructure in dev, Athena is currently implemented as a high-fidelity simulation with modeled latency.
+- **Simulated AWS Athena**: To demonstrate the **Multi-Warehouse** potential without requiring costly cloud infrastructure in dev, Athena is currently implemented as a high-fidelity simulation with modeled latency.
 
 ### Visual State as the Source of Truth
 - **Decision**: The Modeling Canvas is not just a UI; it is the **compiler input**.
@@ -39,12 +39,13 @@ We log every significant user action (Logins, Query Executions, Model Updates) t
 ## 4. Design Aesthetics: Cyber-Brutalism
 - **Decision**: Reject the "SaaS Pastel" trend.
 - **Rationale**: High-contrast dark modes with monospaced typography aren't just an aesthetic choice; they maximize **information density** and reduce eye strain for power users spending hours in data analysis.
+
 ## 5. Market Differentiation: The "Deterministic" Advantage
 While rivals like **MonkeyLearn** or generic **ChatGPT Data Analysts** rely on raw CSV uploads and opaque reasoning, NeuronLink creates a **Shared Reality**.
 - **The Competitive Advantage**: By persisting the model in Supabase, multiple stakeholders can view the *exact same* joins and field definitions.
-- **WASM-First**: By using `sql.js`, we offer a "Local-First" data experience that is significantly faster than any cloud-based dashboard for initial exploration.
+- **WASM-First**: By using `sql.js`, we offer a **Local-First** Data UX that is significantly faster than any cloud-based dashboard for initial exploration.
 
 ## 6. The Roadmap: 2026 and Beyond
-- **Q3 2026**: Multi-warehouse orchestration — join data between a Postgres DB and a Snowflake Lakehouse in a single view.
+- **Q3 2026**: Multi-warehouse orchestration — join data between a local Postgres instance and a Snowflake cloud warehouse in a single view.
 - **Q4 2026**: "Semantic Alerts" — Proactive notifications when business KPIs (e.g., Conversion Rate) start to diverge from the predicted model.
 - **2027**: Fully autonomous "Data Agents" that don't just answer questions but identify and fix data quality issues in the source warehouse.
